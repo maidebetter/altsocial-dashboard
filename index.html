@@ -701,15 +701,15 @@ function renderApprovalQueue(){
     const myApv=getApproval(city,item,person);
     const otherApv=getApproval(city,item,otherWho);
     const ik=`'${city}','${item.date}','${item.content.replace(/'/g,"\\'")}' `;
-    return `<div class="aq-item">
+    return `<div class="aq-item" data-city="${city}" data-date="${item.date}" data-content="${item.content.replace(/"/g,'&quot;')}" data-who="${person}">
       <div class="aq-item-title">${item.content}</div>
       <div class="aq-item-meta">${item.day} · Posts ${item.date} · ${item.who||'—'}</div>
       ${all.length?`<div class="aq-assets">${all.map(a=>{const cls=a.type==='video'?'asset-chip asset-video':a.type==='photo'?'asset-chip asset-photo':'inspo-link';const icon=a.type==='video'?'▶ ':a.type==='photo'?'🖼 ':'';return`<a class="${cls}" href="${a.url}" target="_blank" style="font-size:10px;">${icon}${a.label}</a>`;}).join('')}</div>`:''}
       <div class="aq-approvers">${otherWho}: <span class="${otherApv==='approved'?'ok':''}">${otherApv==='approved'?'✓ Approved':otherApv==='rejected'?'✗ Requested changes':'Pending'}</span></div>
       <div class="aq-actions">
         <button class="aq-approve ${myApv==='approved'?'done':''}" onclick="doApprove(${ik},'${person}','approved')">${myApv==='approved'?'✓ You approved':'Approve'}</button>
-        ${myApv!=='approved'?`<button class="aq-reject" onclick="openCRModal('${city}','${item.date}','${item.content.replace(/'/g,"\\'")}','${person}')">Request changes</button>`:''}
-        <button class="aq-reject" style="background:rgba(255,255,255,.05);color:rgba(255,255,255,.4);border-color:rgba(255,255,255,.15);" onclick="markStatusDirect('${city}','${item.date}','${item.content.replace(/'/g,"\\'")}','no-approval')">No approval needed</button>
+        ${myApv!=='approved'?'<button class="aq-reject" onclick="handleCR(this)">Request changes</button>':''}
+        <button class="aq-reject" style="background:rgba(255,255,255,.05);color:rgba(255,255,255,.4);border-color:rgba(255,255,255,.15);" onclick="handleNoApproval(this)">No approval needed</button>
       </div>
     </div>`;
   }).join('');
@@ -753,40 +753,18 @@ function renderChangeRequests(){
   }).join('');
 }
 
-
-  const queue=document.getElementById('approval-queue');
-  const list=document.getElementById('aq-list');
-  const countEl=document.getElementById('aq-count');
-  if(!APPROVERS.includes(person)){queue.classList.remove('show');return;}
-  const DATA=getData();
-  const pending=DATA.filter(r=>!isTBD(r.content)&&getStatus(city,r)==='sent'&&getApproval(city,r,person)!=='approved');
-  countEl.textContent=pending.length;
-  countEl.style.background=pending.length?'var(--blue)':'rgba(56,182,255,0.3)';
-  queue.classList.add('show');
-  if(!pending.length){
-    list.innerHTML='<div class="empty" style="color:rgba(56,182,255,0.5);padding:8px 0;">No posts pending your approval right now.</div>';
-    return;
-  }
-  const otherWho=APPROVERS.find(w=>w!==person);
-  list.innerHTML=pending.map(item=>{
-    const assets=getAssets(city,item);
-    const inspo=(item.links||[]).map((l,i)=>({url:l,label:`Inspo ${i+1}`,type:'inspo'}));
-    const all=[...inspo,...assets];
-    const myApv=getApproval(city,item,person);
-    const otherApv=getApproval(city,item,otherWho);
-    const ik=`'${city}','${item.date}','${item.content.replace(/'/g,"\\'")}'`;
-    return `<div class="aq-item">
-      <div class="aq-item-title">${item.content}</div>
-      <div class="aq-item-meta">${item.day} · Posts ${item.date} · ${item.who||'—'}</div>
-      ${all.length?`<div class="aq-assets">${all.map(a=>{const cls=a.type==='video'?'asset-chip asset-video':a.type==='photo'?'asset-chip asset-photo':'inspo-link';const icon=a.type==='video'?'▶ ':a.type==='photo'?'🖼 ':'';return`<a class="${cls}" href="${a.url}" target="_blank" style="font-size:10px;">${icon}${a.label}</a>`;}).join('')}</div>`:''}
-      <div class="aq-approvers">${otherWho}: <span class="${otherApv==='approved'?'ok':''}">${otherApv==='approved'?'✓ Approved':otherApv==='rejected'?'✗ Requested changes':'Pending'}</span></div>
-      <div class="aq-actions">
-        <button class="aq-approve ${myApv==='approved'?'done':''}" onclick="doApprove(${ik},'${person}','approved')">${myApv==='approved'?'✓ You approved':'Approve'}</button>
-        ${myApv!=='approved'?`<button class="aq-reject" onclick="openCRModal('${city}','${item.date}','${item.content.replace(/'/g,"\\'")}','${person}')">Request changes</button>`:''}
-        <button class="aq-reject" style="background:rgba(255,255,255,.05);color:rgba(255,255,255,.4);border-color:rgba(255,255,255,.15);" onclick="markStatusDirect('${city}','${item.date}','${item.content.replace(/'/g,"\\'")}','no-approval')">No approval needed</button>
-      </div>
-    </div>`;
-  }).join('');
+// Helper functions for approval queue buttons (avoids nested template literals)
+function handleCR(btn){
+  const item=btn.closest('.aq-item');
+  const c=item.dataset.city;
+  const date=item.dataset.date;
+  const content=item.dataset.content;
+  const who=item.dataset.who;
+  openCRModal(c,date,content,who);
+}
+function handleNoApproval(btn){
+  const item=btn.closest('.aq-item');
+  markStatusDirect(item.dataset.city,item.dataset.date,item.dataset.content,'no-approval');
 }
 
 function doApprove(c,date,content,who,val){
