@@ -46,6 +46,28 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--black);color:
 .p-amanda.on{background:#FB923C;}
 .approval-queue{background:var(--blue-dim2);border:1px solid rgba(56,182,255,.2);border-radius:var(--rl);padding:1rem 1.1rem;margin-bottom:1.25rem;display:none;}
 .approval-queue.show{display:block;}
+/* Change request modal */
+.cr-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:200;backdrop-filter:blur(4px);align-items:center;justify-content:center;}
+.cr-modal-overlay.show{display:flex;}
+.cr-modal{background:var(--black2);border:1px solid var(--border2);border-radius:var(--rl);padding:1.5rem;width:min(440px,90vw);box-shadow:0 20px 60px rgba(0,0,0,.5);}
+.cr-modal-title{font-size:13px;font-weight:700;color:var(--white);margin-bottom:4px;}
+.cr-modal-sub{font-size:11px;color:var(--w3);margin-bottom:14px;}
+.cr-textarea{width:100%;background:var(--black3);border:1px solid var(--border2);border-radius:10px;padding:10px 12px;font-size:12px;color:var(--white);font-family:inherit;resize:vertical;min-height:90px;outline:none;line-height:1.5;}
+.cr-textarea:focus{border-color:var(--pink);}
+.cr-modal-actions{display:flex;gap:8px;margin-top:12px;justify-content:flex-end;}
+.cr-cancel{font-size:11px;font-weight:600;padding:6px 16px;border-radius:20px;border:1px solid var(--border2);background:transparent;color:var(--w3);cursor:pointer;}
+.cr-submit{font-size:11px;font-weight:700;padding:6px 16px;border-radius:20px;border:none;background:var(--pink);color:var(--black);cursor:pointer;}
+/* Change requests section (editor view) */
+.change-requests{background:rgba(245,160,182,0.07);border:1px solid rgba(245,160,182,.2);border-radius:var(--rl);padding:1rem 1.1rem;margin-bottom:1.25rem;display:none;}
+.change-requests.show{display:block;}
+.cr-title{font-size:10px;font-weight:700;color:var(--pink);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+.cr-badge{background:var(--pink);color:var(--black);font-size:10px;font-weight:700;padding:1px 7px;border-radius:20px;}
+.cr-item{background:var(--black2);border:1px solid var(--border);border-radius:var(--r);padding:10px 12px;margin-bottom:8px;}
+.cr-item:last-child{margin-bottom:0;}
+.cr-item-title{font-size:13px;font-weight:600;color:var(--white);}
+.cr-item-meta{font-size:11px;color:var(--w3);margin-top:2px;}
+.cr-note{font-size:12px;color:var(--pink);background:rgba(245,160,182,.1);border:1px solid rgba(245,160,182,.2);border-radius:8px;padding:8px 10px;margin-top:8px;line-height:1.5;}
+.cr-note-label{font-size:9px;font-weight:700;color:var(--pink);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;}
 .aq-title{font-size:10px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px;display:flex;align-items:center;gap:8px;}
 .aq-badge{background:var(--blue);color:var(--black);font-size:10px;font-weight:700;padding:1px 7px;border-radius:20px;}
 .aq-item{background:var(--black2);border:1px solid var(--border);border-radius:var(--r);padding:10px 12px;margin-bottom:8px;}
@@ -172,6 +194,25 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--black);color:
   <div class="person-bar" id="person-bar"></div>
 </div>
 
+<!-- Request changes modal -->
+<div class="cr-modal-overlay" id="cr-modal-overlay">
+  <div class="cr-modal">
+    <div class="cr-modal-title" id="cr-modal-title">Request Changes</div>
+    <div class="cr-modal-sub" id="cr-modal-sub">Describe what needs to be fixed</div>
+    <textarea class="cr-textarea" id="cr-textarea" placeholder="e.g. Audio cuts out at 0:23, color grade looks off, wrong logo used..."></textarea>
+    <div class="cr-modal-actions">
+      <button class="cr-cancel" onclick="closeCRModal()">Cancel</button>
+      <button class="cr-submit" onclick="submitCR()">Send feedback</button>
+    </div>
+  </div>
+</div>
+
+<!-- Change requests section (shows on editor tabs) -->
+<div class="change-requests" id="change-requests">
+  <div class="cr-title">Change Requests <span class="cr-badge" id="cr-count">0</span></div>
+  <div id="cr-list"></div>
+</div>
+
 <div class="approval-queue" id="approval-queue">
   <div class="aq-title">Needs Your Approval <span class="aq-badge" id="aq-count">0</span></div>
   <div id="aq-list"></div>
@@ -278,9 +319,12 @@ async function loadFromSupabase(){
       assetsCache[r.item_key].push({url:r.url,label:r.label,type:r.type,id:r.id});
     }
   });
-  // Load approvals from statuses table using apv|| prefix
+  // Load approvals and feedback from statuses table
   statuses.forEach(r=>{
     if(r.item_key&&r.item_key.startsWith('apv||'))approvalCache[r.item_key]=r.status;
+    if(r.item_key&&r.item_key.startsWith('feedback||')&&r.status){
+      try{feedbackCache[r.item_key]=JSON.parse(r.status);}catch(e){}
+    }
   });
   renderAll();
   document.getElementById('save-pill').textContent='Synced ✓';
@@ -330,7 +374,61 @@ async function addAssetToSupabase(c,item,asset){
   await sbUpsert('assets',{item_key:assetsKey(c,item),url:asset.url,label:asset.label,type:asset.type});
 }
 
+// Feedback/change request storage
+const feedbackCache={};
+function feedbackKey(c,item){return'feedback||'+c+'||'+item.date+'||'+item.content;}
+function getFeedback(c,item){return feedbackCache[feedbackKey(c,item)]||null;}
+function saveFeedback(c,item,note,who){
+  const key=feedbackKey(c,item);
+  feedbackCache[key]={note,who,ts:new Date().toISOString()};
+  sbUpsert('statuses',{item_key:key,status:JSON.stringify({note,who,ts:new Date().toISOString()}),updated_at:new Date().toISOString()});
+  showSave();
+}
+function clearFeedback(c,item){
+  const key=feedbackKey(c,item);
+  delete feedbackCache[key];
+  sbUpsert('statuses',{item_key:key,status:'',updated_at:new Date().toISOString()});
+}
+
 function showSave(){const p=document.getElementById('save-pill');p.classList.add('show');clearTimeout(window._st);window._st=setTimeout(()=>p.classList.remove('show'),2000);}
+
+// Modal state
+let crPending={c:null,date:null,content:null,who:null};
+
+function openCRModal(c,date,content,who){
+  crPending={c,date,content,who};
+  const data=c==='orlando'?ORLANDO:c==='tampa'?TAMPA:TIKTOK;
+  const item=data.find(r=>r.date===date&&r.content===content);
+  document.getElementById('cr-modal-title').textContent='Request Changes';
+  document.getElementById('cr-modal-sub').textContent=`"${content}" — tell the editor what needs fixing`;
+  document.getElementById('cr-textarea').value='';
+  document.getElementById('cr-modal-overlay').classList.add('show');
+  setTimeout(()=>document.getElementById('cr-textarea').focus(),100);
+}
+
+function closeCRModal(){
+  document.getElementById('cr-modal-overlay').classList.remove('show');
+  crPending={c:null,date:null,content:null,who:null};
+}
+
+function submitCR(){
+  const note=document.getElementById('cr-textarea').value.trim();
+  if(!note)return;
+  const{c,date,content,who}=crPending;
+  const data=c==='orlando'?ORLANDO:c==='tampa'?TAMPA:TIKTOK;
+  const item=data.find(r=>r.date===date&&r.content===content);
+  if(!item){closeCRModal();return;}
+  // Save feedback note
+  saveFeedback(c,item,note,who);
+  // Set approver's status to rejected
+  setApproval(c,item,who,'rejected');
+  // Flip post back to in-progress
+  saveStatus(c,item,'in-progress');
+  closeCRModal();
+  renderAll();
+}
+
+
 
 const PEOPLE=['All','Cory','Lindy','Breno','Emily','Kevin','Amanda'];
 const PERSON_CLS={'All':'p-all','Cory':'p-cory','Lindy':'p-lindy','Breno':'p-breno','Emily':'p-emily','Kevin':'p-kevin','Amanda':'p-amanda'};
@@ -537,7 +635,7 @@ function fmtAssets(item,inCard){
   if(!DONE_STATES.includes(getStatus(city,item))&&!isTBD(item.content)){
     const fid='af-'+item.date.replace('/','d')+'-'+item.content.replace(/[^a-z0-9]/gi,'').substring(0,15);
     html+=`<div class="asset-add-row">
-      <input class="asset-input" id="${fid}u" placeholder="Paste Google Drive or Dropbox link..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+      <input class="asset-input" id="${fid}u" placeholder="Paste Google Drive or Dropbox link..." autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-form-type="other" />
       <input class="asset-label-input" id="${fid}l" placeholder="Label" />
       <div class="asset-type-toggle">
         <button class="asset-type-btn on vid" id="${fid}tv" onclick="setAT('${fid}','video')">Video</button>
@@ -602,6 +700,80 @@ function renderApprovalQueue(){
     const all=[...inspo,...assets];
     const myApv=getApproval(city,item,person);
     const otherApv=getApproval(city,item,otherWho);
+    const ik=`'${city}','${item.date}','${item.content.replace(/'/g,"\\'")}' `;
+    return `<div class="aq-item">
+      <div class="aq-item-title">${item.content}</div>
+      <div class="aq-item-meta">${item.day} · Posts ${item.date} · ${item.who||'—'}</div>
+      ${all.length?`<div class="aq-assets">${all.map(a=>{const cls=a.type==='video'?'asset-chip asset-video':a.type==='photo'?'asset-chip asset-photo':'inspo-link';const icon=a.type==='video'?'▶ ':a.type==='photo'?'🖼 ':'';return`<a class="${cls}" href="${a.url}" target="_blank" style="font-size:10px;">${icon}${a.label}</a>`;}).join('')}</div>`:''}
+      <div class="aq-approvers">${otherWho}: <span class="${otherApv==='approved'?'ok':''}">${otherApv==='approved'?'✓ Approved':otherApv==='rejected'?'✗ Requested changes':'Pending'}</span></div>
+      <div class="aq-actions">
+        <button class="aq-approve ${myApv==='approved'?'done':''}" onclick="doApprove(${ik},'${person}','approved')">${myApv==='approved'?'✓ You approved':'Approve'}</button>
+        ${myApv!=='approved'?`<button class="aq-reject" onclick="openCRModal('${city}','${item.date}','${item.content.replace(/'/g,"\\'")}','${person}')">Request changes</button>`:''}
+        <button class="aq-reject" style="background:rgba(255,255,255,.05);color:rgba(255,255,255,.4);border-color:rgba(255,255,255,.15);" onclick="markStatusDirect('${city}','${item.date}','${item.content.replace(/'/g,"\\'")}','no-approval')">No approval needed</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderChangeRequests(){
+  const cr=document.getElementById('change-requests');
+  const list=document.getElementById('cr-list');
+  const countEl=document.getElementById('cr-count');
+  if(APPROVERS.includes(person)||person==='All'){cr.classList.remove('show');return;}
+  const DATA=getData();
+  const myPosts=DATA.filter(r=>matchesPerson(r)&&!isTBD(r.content));
+  const withFeedback=myPosts.filter(r=>{
+    const fb=getFeedback(city,r);
+    return fb&&fb.note&&getStatus(city,r)==='in-progress';
+  });
+  countEl.textContent=withFeedback.length;
+  if(!withFeedback.length){cr.classList.remove('show');return;}
+  cr.classList.add('show');
+  list.innerHTML=withFeedback.map(item=>{
+    const fb=getFeedback(city,item);
+    const fid='cr-'+item.date.replace('/','d')+'-'+item.content.replace(/[^a-z0-9]/gi,'').substring(0,15);
+    return `<div class="cr-item">
+      <div class="cr-item-title">${item.content}</div>
+      <div class="cr-item-meta">${item.day} · ${item.date} · Feedback from ${fb.who}</div>
+      <div class="cr-note">
+        <div class="cr-note-label">What needs to change</div>
+        ${fb.note}
+      </div>
+      <div class="asset-add-row" style="margin-top:10px;">
+        <input class="asset-input" id="${fid}u" placeholder="Paste updated Drive or Dropbox link..." autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-form-type="other" />
+        <input class="asset-label-input" id="${fid}l" placeholder="Label" />
+        <div class="asset-type-toggle">
+          <button class="asset-type-btn on vid" id="${fid}tv" onclick="setAT('${fid}','video')">Video</button>
+          <button class="asset-type-btn img" id="${fid}ti" onclick="setAT('${fid}','photo')">Photo</button>
+        </div>
+        <button class="asset-add-btn" onclick="addAsset('${city}','${item.date}','${item.content.replace(/'/g,"\\'")}','${fid}')">+ Add</button>
+      </div>
+      <div class="apv-row" style="margin-top:8px;">${renderApvBtns(city,item,false)}</div>
+    </div>`;
+  }).join('');
+}
+
+
+  const queue=document.getElementById('approval-queue');
+  const list=document.getElementById('aq-list');
+  const countEl=document.getElementById('aq-count');
+  if(!APPROVERS.includes(person)){queue.classList.remove('show');return;}
+  const DATA=getData();
+  const pending=DATA.filter(r=>!isTBD(r.content)&&getStatus(city,r)==='sent'&&getApproval(city,r,person)!=='approved');
+  countEl.textContent=pending.length;
+  countEl.style.background=pending.length?'var(--blue)':'rgba(56,182,255,0.3)';
+  queue.classList.add('show');
+  if(!pending.length){
+    list.innerHTML='<div class="empty" style="color:rgba(56,182,255,0.5);padding:8px 0;">No posts pending your approval right now.</div>';
+    return;
+  }
+  const otherWho=APPROVERS.find(w=>w!==person);
+  list.innerHTML=pending.map(item=>{
+    const assets=getAssets(city,item);
+    const inspo=(item.links||[]).map((l,i)=>({url:l,label:`Inspo ${i+1}`,type:'inspo'}));
+    const all=[...inspo,...assets];
+    const myApv=getApproval(city,item,person);
+    const otherApv=getApproval(city,item,otherWho);
     const ik=`'${city}','${item.date}','${item.content.replace(/'/g,"\\'")}'`;
     return `<div class="aq-item">
       <div class="aq-item-title">${item.content}</div>
@@ -610,7 +782,7 @@ function renderApprovalQueue(){
       <div class="aq-approvers">${otherWho}: <span class="${otherApv==='approved'?'ok':''}">${otherApv==='approved'?'✓ Approved':otherApv==='rejected'?'✗ Requested changes':'Pending'}</span></div>
       <div class="aq-actions">
         <button class="aq-approve ${myApv==='approved'?'done':''}" onclick="doApprove(${ik},'${person}','approved')">${myApv==='approved'?'✓ You approved':'Approve'}</button>
-        ${myApv!=='approved'?`<button class="aq-reject" onclick="doApprove(${ik},'${person}','rejected')">Request changes</button>`:''}
+        ${myApv!=='approved'?`<button class="aq-reject" onclick="openCRModal('${city}','${item.date}','${item.content.replace(/'/g,"\\'")}','${person}')">Request changes</button>`:''}
         <button class="aq-reject" style="background:rgba(255,255,255,.05);color:rgba(255,255,255,.4);border-color:rgba(255,255,255,.15);" onclick="markStatusDirect('${city}','${item.date}','${item.content.replace(/'/g,"\\'")}','no-approval')">No approval needed</button>
       </div>
     </div>`;
@@ -725,7 +897,11 @@ function openPanel(type){
 function markStatus(c,date,content,s){
   const data=c==='orlando'?ORLANDO:c==='tampa'?TAMPA:TIKTOK;
   const item=data.find(r=>r.date===date&&r.content===content);
-  if(item)saveStatus(c,item,s);
+  if(item){
+    saveStatus(c,item,s);
+    // Clear feedback when resubmitting for approval
+    if(s==='sent')clearFeedback(c,item);
+  }
   renderAll();
 }
 
@@ -843,6 +1019,7 @@ function renderAll(){
   document.getElementById('due-list').innerHTML=dueItems.length?dueItems.map(i=>renderCard(i,'due')).join(''):'<div class="empty">No approvals due today</div>';
   renderCal();
   renderApprovalQueue();
+  renderChangeRequests();
   const sb=document.getElementById('shot-list');
   if(sb)sb.innerHTML=TAMPA_SHOTS.map(s=>`<div class="shot-row"><div class="shot-name">${s.name}</div>${s.links.map((l,i)=>`<a class="inspo-link" href="${l}" target="_blank">Inspo ${i+1}</a>`).join('')}</div>`).join('');
 }
