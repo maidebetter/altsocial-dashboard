@@ -289,10 +289,15 @@ async function loadFromSupabase(){
 
 // ── REALTIME SUBSCRIPTION ────────────────────────────────
 function subscribeRealtime(){
-  // Poll every 10 seconds as a lightweight realtime fallback
+  // Refresh Supabase statuses every 10 seconds
   setInterval(async()=>{
     await loadFromSupabase();
   },10000);
+  // Refresh Google Sheets every 60 seconds so new rows show up automatically
+  setInterval(async()=>{
+    await fetchSheetData();
+    renderAll();
+  },60000);
 }
 
 function sk(c,item){return c+'||'+item.date+'||'+item.content;}
@@ -362,45 +367,57 @@ async function fetchSheetData(){
     document.getElementById('save-pill').textContent='Loading sheets...';
     document.getElementById('save-pill').style.opacity='1';
 
-    const resp=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        model:'claude-sonnet-4-20250514',
-        max_tokens:4000,
-        system:`You extract content calendar data from Google Sheets and return ONLY valid JSON with no markdown or explanation.
-Return an object with keys: "orlando", "tampa", "tiktok", "tampa_shots"
-Each is an array of objects: {date, day, content, who, links}
-- date: like "4/25" or "12/12"  
-- day: like "Tuesday 8AM" or "Mon"
-- content: the content/concept title (skip empty rows, week labels)
-- who: person assigned
-- links: array of instagram/tiktok URLs if present, else []
-For tiktok: dates go from Dec 2025 through Apr 2026, all assigned to Lindy
-For tampa_shots: array of {name, links} from the shot list tab
-Only include rows that have actual content — skip empty rows, week header rows, event day rows with no content.`,
-        messages:[{role:'user',content:`Read these two Google Sheets and extract all calendar data:
-Orlando sheet ID: 17N5Ot4bx0V1823rGp-xGJfvBVaNoBXCcumYYBPCxACI
-Tampa sheet ID: 1JwSA22yUYkkRnkqQc48b6Xgd_Lh3dxu1KkSYT8iss4k
-Return JSON only.`}],
-        mcp_servers:[{type:'url',url:'https://drivemcp.googleapis.com/mcp/v1',name:'gdrive'}]
-      })
-    });
+    // Use the correct tab GIDs for each sheet
+    const ORL_GID = '1980444187'; // Orlando current calendar tab
+    const TPA_GID = '0'; // Tampa default tab
 
-    const data=await resp.json();
-    const textBlock=data.content&&data.content.find(b=>b.type==='text');
-    if(textBlock){
-      const raw=textBlock.text.replace(/```json|```/g,'').trim();
-      const parsed=JSON.parse(raw);
-      if(parsed.orlando&&parsed.orlando.length)ORLANDO=parsed.orlando;
-      if(parsed.tampa&&parsed.tampa.length)TAMPA=parsed.tampa;
-      if(parsed.tiktok&&parsed.tiktok.length)TIKTOK=parsed.tiktok;
-      if(parsed.tampa_shots&&parsed.tampa_shots.length)TAMPA_SHOTS=parsed.tampa_shots;
+    const [orlResp, tpaResp] = await Promise.all([
+      fetch(`https://docs.google.com/spreadsheets/d/17N5Ot4bx0V1823rGp-xGJfvBVaNoBXCcumYYBPCxACI/gviz/tq?tqx=out:csv&gid=${ORL_GID}`, {mode:'cors'}),
+      fetch(`https://docs.google.com/spreadsheets/d/1JwSA22yUYkkRnkqQc48b6Xgd_Lh3dxu1KkSYT8iss4k/gviz/tq?tqx=out:csv`, {mode:'cors'})
+    ]);
+
+    if(!orlResp.ok||!tpaResp.ok) throw new Error('Sheet fetch failed');
+
+    const [orlCsv, tpaCsv] = await Promise.all([orlResp.text(), tpaResp.text()]);
+
+    const parsed_orl = parseCalendarCSV(orlCsv);
+    const parsed_tpa = parseCalendarCSV(tpaCsv);
+
+    if(parsed_orl.length>5){
+      ORLANDO = parsed_orl;
+      console.log(`✓ Orlando: ${ORLANDO.length} items from live sheet`);
+    } else {
+      console.log('Orlando parse too short, using fallback');
+      loadFallbackData();
     }
-  }catch(e){
-    console.log('Sheet fetch error, using cached data:',e);
+    if(parsed_tpa.length>3){
+      TAMPA = parsed_tpa;
+      console.log(`✓ Tampa: ${TAMPA.length} items from live sheet`);
+    }
+
+  } catch(e){
+    console.log('Sheet fetch error, using fallback:', e);
     loadFallbackData();
   }
+}
+
+function parseCalendarCSV(csv){
+  const lines = csv.split('\n').map(l => l.split(',').map(c => c.replace(/^"|"$/g,'').trim()));
+  const items = [];
+  for(const row of lines){
+    const date = (row[0]||'').trim();
+    const day = (row[1]||'').trim();
+    const status = (row[2]||'').trim();
+    const content = (row[3]||'').trim();
+    const who = (row[4]||'').trim();
+    const link = (row[9]||'').trim();
+    // Skip empty rows, header rows, week label rows
+    if(!date || !date.includes('/')) continue;
+    if(!content || content === 'Content') continue;
+    const links = link && link.startsWith('http') ? [link] : [];
+    items.push({date, day, content, who, links});
+  }
+  return items;
 }
 
 function loadFallbackData(){
@@ -520,7 +537,7 @@ function fmtAssets(item,inCard){
   if(!DONE_STATES.includes(getStatus(city,item))&&!isTBD(item.content)){
     const fid='af-'+item.date.replace('/','d')+'-'+item.content.replace(/[^a-z0-9]/gi,'').substring(0,15);
     html+=`<div class="asset-add-row">
-      <input class="asset-input" id="${fid}u" placeholder="Paste Google Drive or Dropbox link..." />
+      <input class="asset-input" id="${fid}u" placeholder="Paste Google Drive or Dropbox link..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
       <input class="asset-label-input" id="${fid}l" placeholder="Label" />
       <div class="asset-type-toggle">
         <button class="asset-type-btn on vid" id="${fid}tv" onclick="setAT('${fid}','video')">Video</button>
