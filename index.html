@@ -132,8 +132,16 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--black);color:
 .approver-chip.pending{background:var(--black4);color:var(--w3);border:1px solid var(--border2);}
 .approver-chip.approved{background:var(--green-dim);color:var(--green);border:1px solid rgba(94,232,160,.3);}
 .approver-chip.rejected{background:rgba(255,107,107,.15);color:#FF6B6B;border:1px solid rgba(255,107,107,.3);}
-.apv-row{display:flex;gap:4px;margin-top:9px;flex-wrap:wrap;}
-.apv-btn{font-size:10px;padding:3px 10px;border:1px solid var(--border2);border-radius:20px;background:transparent;color:var(--w3);cursor:pointer;transition:all .1s;font-weight:500;}
+/* Status dropdown */
+.status-dropdown{position:relative;display:inline-block;margin-top:8px;}
+.status-dd-btn{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;padding:4px 10px 4px 10px;border-radius:20px;border:1px solid var(--border2);background:var(--black3);color:var(--w2);cursor:pointer;transition:all .15s;font-family:inherit;white-space:nowrap;}
+.status-dd-btn:hover{border-color:var(--border2);filter:brightness(1.15);}
+.status-dd-btn .dd-arrow{font-size:8px;opacity:.6;margin-left:2px;}
+.status-dd-menu{display:none;position:absolute;top:calc(100% + 4px);left:0;background:var(--black2);border:1px solid var(--border2);border-radius:10px;padding:4px;z-index:50;min-width:180px;box-shadow:0 8px 24px rgba(0,0,0,.5);}
+.status-dd-menu.open{display:block;}
+.status-dd-option{display:block;width:100%;text-align:left;font-size:11px;font-weight:500;padding:6px 10px;border:none;background:transparent;color:var(--w2);cursor:pointer;border-radius:6px;font-family:inherit;transition:background .1s;}
+.status-dd-option:hover{background:var(--w5);}
+.status-dd-option.active{font-weight:700;}
 .apv-not{background:var(--black4)!important;color:var(--w3)!important;border-color:var(--border2)!important;}
 .apv-prog{background:var(--yellow-dim)!important;color:var(--yellow)!important;border-color:rgba(255,255,140,.3)!important;}
 .apv-sent{background:var(--blue-dim)!important;color:var(--blue)!important;border-color:rgba(56,182,255,.3)!important;}
@@ -162,7 +170,7 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--black);color:
 .cal-dl{font-size:9px;margin-top:3px;font-weight:600;}
 .cal-assets{display:flex;flex-wrap:wrap;gap:3px;margin-top:4px;}
 .cal-apv{display:flex;gap:3px;margin-top:5px;flex-wrap:wrap;}
-.cal-apv-btn{font-size:9px;padding:2px 8px;border:1px solid var(--border);border-radius:20px;background:transparent;color:var(--w3);cursor:pointer;font-weight:500;transition:all .1s;}
+.cal-apv{margin-top:5px;}
 .st-badge{font-size:9px;padding:2px 7px;border-radius:20px;display:inline-block;margin-top:3px;font-weight:600;}
 .tbd-text{color:var(--w3);font-style:italic;}
 .shot-row{display:flex;align-items:center;gap:10px;padding:8px 6px;border-bottom:1px solid var(--border);}
@@ -462,41 +470,69 @@ function parseSheetRow(row, city){
 
 async function fetchSheetData(){
   try{
-    document.getElementById('save-pill').textContent='Loading sheets...';
+    document.getElementById('save-pill').textContent='Loading...';
     document.getElementById('save-pill').style.opacity='1';
 
-    // Use the correct tab GIDs for each sheet
-    const ORL_GID = '1980444187'; // Orlando current calendar tab
-    const TPA_GID = '0'; // Tampa default tab
-
-    const [orlResp, tpaResp] = await Promise.all([
-      fetch(`https://docs.google.com/spreadsheets/d/17N5Ot4bx0V1823rGp-xGJfvBVaNoBXCcumYYBPCxACI/gviz/tq?tqx=out:csv&gid=${ORL_GID}`, {mode:'cors'}),
-      fetch(`https://docs.google.com/spreadsheets/d/1JwSA22yUYkkRnkqQc48b6Xgd_Lh3dxu1KkSYT8iss4k/gviz/tq?tqx=out:csv`, {mode:'cors'})
+    // Use JSONP approach with Google Sheets gviz API — bypasses CORS from GitHub Pages
+    const [orlData, tpaData] = await Promise.all([
+      fetchSheetJSONP('17N5Ot4bx0V1823rGp-xGJfvBVaNoBXCcumYYBPCxACI', '1980444187'),
+      fetchSheetJSONP('1JwSA22yUYkkRnkqQc48b6Xgd_Lh3dxu1KkSYT8iss4k', '0')
     ]);
 
-    if(!orlResp.ok||!tpaResp.ok) throw new Error('Sheet fetch failed');
-
-    const [orlCsv, tpaCsv] = await Promise.all([orlResp.text(), tpaResp.text()]);
-
-    const parsed_orl = parseCalendarCSV(orlCsv);
-    const parsed_tpa = parseCalendarCSV(tpaCsv);
-
-    if(parsed_orl.length>5){
-      ORLANDO = parsed_orl;
+    if(orlData && orlData.length > 5){
+      ORLANDO = orlData;
       console.log(`✓ Orlando: ${ORLANDO.length} items from live sheet`);
     } else {
-      console.log('Orlando parse too short, using fallback');
+      console.log('Orlando fallback');
       loadFallbackData();
     }
-    if(parsed_tpa.length>3){
-      TAMPA = parsed_tpa;
+    if(tpaData && tpaData.length > 3){
+      TAMPA = tpaData;
       console.log(`✓ Tampa: ${TAMPA.length} items from live sheet`);
     }
-
   } catch(e){
     console.log('Sheet fetch error, using fallback:', e);
     loadFallbackData();
   }
+}
+
+function fetchSheetJSONP(sheetId, gid){
+  return new Promise((resolve, reject)=>{
+    const cbName = 'cb_' + Math.random().toString(36).slice(2);
+    const script = document.createElement('script');
+    const timeout = setTimeout(()=>{
+      delete window[cbName];
+      script.remove();
+      reject(new Error('timeout'));
+    }, 8000);
+
+    window[cbName] = (data)=>{
+      clearTimeout(timeout);
+      delete window[cbName];
+      script.remove();
+      try{
+        const rows = data.table.rows;
+        const items = [];
+        rows.forEach(row=>{
+          const cells = row.c || [];
+          const date = cells[0]&&cells[0].v ? String(cells[0].v).trim() : '';
+          const day = cells[1]&&cells[1].v ? String(cells[1].v).trim() : '';
+          const content = cells[3]&&cells[3].v ? String(cells[3].v).trim() : '';
+          const who = cells[4]&&cells[4].v ? String(cells[4].v).trim() : '';
+          const link = cells[9]&&cells[9].v ? String(cells[9].v).trim() : '';
+          if(!date || !date.includes('/') || !content) return;
+          if(content === 'Content' || date.toLowerCase().startsWith('week')) return;
+          const links = link && link.startsWith('http') ? [link] : [];
+          items.push({date, day, content, who, links});
+        });
+        resolve(items);
+      } catch(e){ reject(e); }
+    };
+
+    script.src = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json&gid=${gid}&callback=${cbName}`;
+    script.onerror = ()=>{ clearTimeout(timeout); delete window[cbName]; reject(new Error('script error')); };
+    document.head.appendChild(script);
+  });
 }
 
 function parseCalendarCSV(csv){
@@ -636,7 +672,6 @@ function fmtAssets(item,inCard){
     const fid='af-'+item.date.replace('/','d')+'-'+item.content.replace(/[^a-z0-9]/gi,'').substring(0,15);
     html+=`<div class="asset-add-row">
       <input class="asset-input" id="${fid}u" placeholder="Paste Google Drive or Dropbox link..." autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-form-type="other" />
-      <input class="asset-label-input" id="${fid}l" placeholder="Label" />
       <div class="asset-type-toggle">
         <button class="asset-type-btn on vid" id="${fid}tv" onclick="setAT('${fid}','video')">Video</button>
         <button class="asset-type-btn img" id="${fid}ti" onclick="setAT('${fid}','photo')">Photo</button>
@@ -655,17 +690,17 @@ function setAT(fid,type){
 }
 
 function addAsset(c,date,content,fid){
-  const u=document.getElementById(fid+'u');const l=document.getElementById(fid+'l');
+  const u=document.getElementById(fid+'u');
   if(!u||!u.value.trim())return;
   const data=c==='orlando'?ORLANDO:c==='tampa'?TAMPA:TIKTOK;
   const item=data.find(r=>r.date===date&&r.content===content);
   if(!item)return;
-  const asset={url:u.value.trim(),label:l.value.trim()||'',type:assetTypeState[fid]||'video'};
+  const asset={url:u.value.trim(),label:'',type:assetTypeState[fid]||'video'};
   const key=assetsKey(c,item);
   if(!assetsCache[key])assetsCache[key]=[];
   assetsCache[key].push(asset);
   addAssetToSupabase(c,item,asset);
-  u.value='';l.value='';renderAll();
+  u.value='';renderAll();
 }
 
 function fmtApproverChips(item,small){
@@ -684,30 +719,46 @@ function renderApprovalQueue(){
   const list=document.getElementById('aq-list');
   const countEl=document.getElementById('aq-count');
   if(!APPROVERS.includes(person)){queue.classList.remove('show');return;}
-  const DATA=getData();
-  const pending=DATA.filter(r=>!isTBD(r.content)&&getStatus(city,r)==='sent'&&getApproval(city,r,person)!=='approved');
+  const otherWho=APPROVERS.find(w=>w!==person);
+
+  // Collect pending items from ALL cities so Kevin/Emily never miss anything
+  const allCities=[
+    {c:'orlando',data:ORLANDO},
+    {c:'tampa',data:TAMPA}
+  ];
+  const pending=[];
+  allCities.forEach(({c,data})=>{
+    data.filter(r=>!isTBD(r.content)&&getStatus(c,r)==='sent'&&getApproval(c,r,person)!=='approved')
+      .forEach(r=>pending.push({item:r,c}));
+  });
+
   countEl.textContent=pending.length;
   countEl.style.background=pending.length?'var(--blue)':'rgba(56,182,255,0.3)';
   queue.classList.add('show');
+
   if(!pending.length){
     list.innerHTML='<div class="empty" style="color:rgba(56,182,255,0.5);padding:8px 0;">No posts pending your approval right now.</div>';
     return;
   }
-  const otherWho=APPROVERS.find(w=>w!==person);
-  list.innerHTML=pending.map(item=>{
-    const assets=getAssets(city,item);
+
+  list.innerHTML=pending.map(({item,c})=>{
+    const assets=getAssets(c,item);
     const inspo=(item.links||[]).map((l,i)=>({url:l,label:`Inspo ${i+1}`,type:'inspo'}));
     const all=[...inspo,...assets];
-    const myApv=getApproval(city,item,person);
-    const otherApv=getApproval(city,item,otherWho);
-    const ik=`'${city}','${item.date}','${item.content.replace(/'/g,"\\'")}' `;
-    return `<div class="aq-item" data-city="${city}" data-date="${item.date}" data-content="${item.content.replace(/"/g,'&quot;')}" data-who="${person}">
+    const myApv=getApproval(c,item,person);
+    const otherApv=getApproval(c,item,otherWho);
+    const cityLabel=c==='orlando'?'🌴 Orlando':'🌊 Tampa';
+    const ik=`'${c}','${item.date}','${item.content.replace(/'/g,"\\'")}','${person}','approved'`;
+    return `<div class="aq-item" data-city="${c}" data-date="${item.date}" data-content="${item.content.replace(/"/g,'&quot;')}" data-who="${person}">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">
+        <span style="font-size:9px;font-weight:700;padding:2px 8px;border-radius:20px;background:${c==='orlando'?'var(--blue-dim)':'var(--pink-dim)'};color:${c==='orlando'?'var(--blue)':'var(--pink)'};">${cityLabel}</span>
+      </div>
       <div class="aq-item-title">${item.content}</div>
       <div class="aq-item-meta">${item.day} · Posts ${item.date} · ${item.who||'—'}</div>
       ${all.length?`<div class="aq-assets">${all.map(a=>{const cls=a.type==='video'?'asset-chip asset-video':a.type==='photo'?'asset-chip asset-photo':'inspo-link';const icon=a.type==='video'?'▶ ':a.type==='photo'?'🖼 ':'';return`<a class="${cls}" href="${a.url}" target="_blank" style="font-size:10px;">${icon}${a.label}</a>`;}).join('')}</div>`:''}
       <div class="aq-approvers">${otherWho}: <span class="${otherApv==='approved'?'ok':''}">${otherApv==='approved'?'✓ Approved':otherApv==='rejected'?'✗ Requested changes':'Pending'}</span></div>
       <div class="aq-actions">
-        <button class="aq-approve ${myApv==='approved'?'done':''}" onclick="doApprove(${ik},'${person}','approved')">${myApv==='approved'?'✓ You approved':'Approve'}</button>
+        <button class="aq-approve ${myApv==='approved'?'done':''}" onclick="doApprove('${c}','${item.date}','${item.content.replace(/'/g,"\\'")}','${person}','approved')">${myApv==='approved'?'✓ You approved':'Approve'}</button>
         ${myApv!=='approved'?'<button class="aq-reject" onclick="handleCR(this)">Request changes</button>':''}
         <button class="aq-reject" style="background:rgba(255,255,255,.05);color:rgba(255,255,255,.4);border-color:rgba(255,255,255,.15);" onclick="handleNoApproval(this)">No approval needed</button>
       </div>
@@ -741,7 +792,6 @@ function renderChangeRequests(){
       </div>
       <div class="asset-add-row" style="margin-top:10px;">
         <input class="asset-input" id="${fid}u" placeholder="Paste updated Drive or Dropbox link..." autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-form-type="other" />
-        <input class="asset-label-input" id="${fid}l" placeholder="Label" />
         <div class="asset-type-toggle">
           <button class="asset-type-btn on vid" id="${fid}tv" onclick="setAT('${fid}','video')">Video</button>
           <button class="asset-type-btn img" id="${fid}ti" onclick="setAT('${fid}','photo')">Photo</button>
@@ -777,9 +827,42 @@ function doApprove(c,date,content,who,val){
 }
 
 function renderApvBtns(c,item,small){
-  const st=getStatus(c,item);
-  return STATUSES.map(s=>`<button class="${small?'cal-apv-btn apv-btn':'apv-btn'} ${st===s?STATUS_APV_CLS[s]:''}" onclick="markStatus('${c}','${item.date}','${item.content.replace(/'/g,"\\'")}','${s}')">${STATUS_LABELS[s]}</button>`).join('');
+  return renderStatusDropdown(c,item);
 }
+
+function renderStatusDropdown(c,item){
+  const st=getStatus(c,item);
+  const ddId='dd-'+c+'-'+item.date.replace('/','x')+'-'+item.content.replace(/[^a-z0-9]/gi,'').substring(0,12);
+  const btnStyle=STATUS_BADGE[st]||'';
+  const label=STATUS_LABELS[st]||'Not started';
+  const options=STATUSES.map(s=>{
+    const isActive=s===st;
+    const sStyle=STATUS_BADGE[s]||'';
+    return `<button class="status-dd-option${isActive?' active':''}" style="${isActive?sStyle:''}" onclick="selectStatus('${c}','${item.date}','${item.content.replace(/'/g,"\\'")}','${s}','${ddId}')">${STATUS_LABELS[s]}</button>`;
+  }).join('');
+  return `<div class="status-dropdown" id="${ddId}">
+    <button class="status-dd-btn" style="${btnStyle}" onclick="toggleDD('${ddId}',event)">${label} <span class="dd-arrow">▾</span></button>
+    <div class="status-dd-menu" id="${ddId}-menu">${options}</div>
+  </div>`;
+}
+
+function toggleDD(ddId,e){
+  e.stopPropagation();
+  document.querySelectorAll('.status-dd-menu.open').forEach(m=>{
+    if(m.id!==ddId+'-menu')m.classList.remove('open');
+  });
+  document.getElementById(ddId+'-menu').classList.toggle('open');
+}
+
+function selectStatus(c,date,content,s,ddId){
+  markStatus(c,date,content,s);
+  const menu=document.getElementById(ddId+'-menu');
+  if(menu)menu.classList.remove('open');
+}
+
+document.addEventListener('click',()=>{
+  document.querySelectorAll('.status-dd-menu.open').forEach(m=>m.classList.remove('open'));
+});
 
 function closePanel(){
   document.getElementById('panel').style.display='none';
