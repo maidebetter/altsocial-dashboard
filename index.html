@@ -473,66 +473,25 @@ async function fetchSheetData(){
     document.getElementById('save-pill').textContent='Loading...';
     document.getElementById('save-pill').style.opacity='1';
 
-    // Use JSONP approach with Google Sheets gviz API — bypasses CORS from GitHub Pages
-    const [orlData, tpaData] = await Promise.all([
-      fetchSheetJSONP('17N5Ot4bx0V1823rGp-xGJfvBVaNoBXCcumYYBPCxACI', '1980444187'),
-      fetchSheetJSONP('1JwSA22yUYkkRnkqQc48b6Xgd_Lh3dxu1KkSYT8iss4k', '0')
-    ]);
+    // Fetch from published CSV URL — no CORS issues from GitHub Pages
+    const PUBLISHED_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?output=csv';
 
-    if(orlData && orlData.length > 5){
-      ORLANDO = orlData;
+    const resp = await fetch(PUBLISHED_URL);
+    if(!resp.ok) throw new Error('fetch failed: '+resp.status);
+    const csv = await resp.text();
+    const parsed = parseCalendarCSV(csv);
+
+    if(parsed.length > 5){
+      ORLANDO = parsed;
       console.log(`✓ Orlando: ${ORLANDO.length} items from live sheet`);
     } else {
-      console.log('Orlando fallback');
+      console.log('Parse too short, using fallback. Rows:', parsed.length);
       loadFallbackData();
-    }
-    if(tpaData && tpaData.length > 3){
-      TAMPA = tpaData;
-      console.log(`✓ Tampa: ${TAMPA.length} items from live sheet`);
     }
   } catch(e){
     console.log('Sheet fetch error, using fallback:', e);
     loadFallbackData();
   }
-}
-
-function fetchSheetJSONP(sheetId, gid){
-  return new Promise((resolve, reject)=>{
-    const cbName = 'cb_' + Math.random().toString(36).slice(2);
-    const script = document.createElement('script');
-    const timeout = setTimeout(()=>{
-      delete window[cbName];
-      script.remove();
-      reject(new Error('timeout'));
-    }, 8000);
-
-    window[cbName] = (data)=>{
-      clearTimeout(timeout);
-      delete window[cbName];
-      script.remove();
-      try{
-        const rows = data.table.rows;
-        const items = [];
-        rows.forEach(row=>{
-          const cells = row.c || [];
-          const date = cells[0]&&cells[0].v ? String(cells[0].v).trim() : '';
-          const day = cells[1]&&cells[1].v ? String(cells[1].v).trim() : '';
-          const content = cells[3]&&cells[3].v ? String(cells[3].v).trim() : '';
-          const who = cells[4]&&cells[4].v ? String(cells[4].v).trim() : '';
-          const link = cells[9]&&cells[9].v ? String(cells[9].v).trim() : '';
-          if(!date || !date.includes('/') || !content) return;
-          if(content === 'Content' || date.toLowerCase().startsWith('week')) return;
-          const links = link && link.startsWith('http') ? [link] : [];
-          items.push({date, day, content, who, links});
-        });
-        resolve(items);
-      } catch(e){ reject(e); }
-    };
-
-    script.src = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json&gid=${gid}&callback=${cbName}`;
-    script.onerror = ()=>{ clearTimeout(timeout); delete window[cbName]; reject(new Error('script error')); };
-    document.head.appendChild(script);
-  });
 }
 
 function parseCalendarCSV(csv){
