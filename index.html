@@ -495,20 +495,40 @@ async function fetchSheetData(){
 }
 
 function parseCalendarCSV(csv){
-  const lines = csv.split('\n').map(l => l.split(',').map(c => c.replace(/^"|"$/g,'').trim()));
-  const items = [];
-  for(const row of lines){
-    const date = (row[0]||'').trim();
-    const day = (row[1]||'').trim();
-    const status = (row[2]||'').trim();
-    const content = (row[3]||'').trim();
-    const who = (row[4]||'').trim();
-    const link = (row[9]||'').trim();
-    // Skip empty rows, header rows, week label rows
-    if(!date || !date.includes('/')) continue;
-    if(!content || content === 'Content') continue;
-    const links = link && link.startsWith('http') ? [link] : [];
-    items.push({date, day, content, who, links});
+  // Proper CSV parser that handles quoted fields with commas inside
+  function parseCSVLine(line){
+    const result=[];
+    let cur='';
+    let inQuotes=false;
+    for(let i=0;i<line.length;i++){
+      const ch=line[i];
+      if(ch==='"'){
+        if(inQuotes&&line[i+1]==='"'){cur+='"';i++;}
+        else inQuotes=!inQuotes;
+      } else if(ch===','&&!inQuotes){
+        result.push(cur.trim());cur='';
+      } else {
+        cur+=ch;
+      }
+    }
+    result.push(cur.trim());
+    return result;
+  }
+
+  const lines=csv.split('\n');
+  const items=[];
+  for(const line of lines){
+    if(!line.trim())continue;
+    const row=parseCSVLine(line);
+    const date=(row[0]||'').trim();
+    const day=(row[1]||'').trim();
+    const content=(row[3]||'').trim();
+    const who=(row[4]||'').trim();
+    const link=(row[9]||'').trim();
+    if(!date||!date.includes('/'))continue;
+    if(!content||content==='Content')continue;
+    const links=link&&link.startsWith('http')?[link]:[];
+    items.push({date,day,content,who,links});
   }
   return items;
 }
