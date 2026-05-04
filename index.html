@@ -662,6 +662,40 @@ function addAsset(c,date,content,fid){
   u.value='';renderAll();
 }
 
+// Used from change request box — clears old assets, attaches new one, clears feedback, sends for approval
+async function resubmitAsset(c,date,content,fid){
+  const u=document.getElementById(fid+'u');
+  if(!u||!u.value.trim()){alert('Please paste a link first.');return;}
+  const data=c==='orlando'?ORLANDO:c==='tampa'?TAMPA:TIKTOK;
+  const item=data.find(r=>r.date===date&&r.content===content);
+  if(!item)return;
+
+  // 1. Delete all old assets from Supabase
+  const key=assetsKey(c,item);
+  try{
+    await sbDelete('assets',`item_key=eq.${encodeURIComponent(key)}`);
+  }catch(e){console.log('asset delete error',e);}
+  assetsCache[key]=[];
+
+  // 2. Add new asset
+  const asset={url:u.value.trim(),label:'',type:assetTypeState[fid]||'video'};
+  assetsCache[key]=[asset];
+  await addAssetToSupabase(c,item,asset);
+
+  // 3. Reset both approvers so Kevin and Emily see it fresh
+  setApproval(c,item,'Kevin','pending');
+  setApproval(c,item,'Emily','pending');
+
+  // 4. Clear the change request / feedback note
+  clearFeedback(c,item);
+
+  // 5. Mark as sent for approval
+  saveStatus(c,item,'sent');
+
+  u.value='';
+  renderAll();
+}
+
 function fmtApproverChips(item,small){
   let html=`<div class="${small?'':'approval-status-row'}" style="${small?'display:flex;gap:4px;margin-top:3px;':''}">`;
   APPROVERS.forEach(who=>{
@@ -755,9 +789,8 @@ function renderChangeRequests(){
           <button class="asset-type-btn on vid" id="${fid}tv" onclick="setAT('${fid}','video')">Video</button>
           <button class="asset-type-btn img" id="${fid}ti" onclick="setAT('${fid}','photo')">Photo</button>
         </div>
-        <button class="asset-add-btn" onclick="addAsset('${city}','${item.date}','${item.content.replace(/'/g,"\\'")}','${fid}')">+ Add</button>
+        <button class="asset-add-btn" style="background:var(--pink-dim);color:var(--pink);border-color:rgba(245,160,182,.3);" onclick="resubmitAsset('${city}','${item.date}','${item.content.replace(/'/g,"\\'")}','${fid}')">↑ Resubmit</button>
       </div>
-      <div class="apv-row" style="margin-top:8px;">${renderApvBtns(city,item,false)}</div>
     </div>`;
   }).join('');
 }
