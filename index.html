@@ -456,13 +456,13 @@ let SHOT_LIST_INSPO=[];
 
 async function fetchShotList(){
   try{
-    const SHOT_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=985053640&single=true&output=csv';
+    const SHOT_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=586760791&single=true&output=csv';
     const resp=await fetch(SHOT_URL);
     if(!resp.ok)throw new Error('shot list fetch failed');
     const csv=await resp.text();
     const items=parseShotListCSV(csv);
     if(items.length>0){SHOT_LIST_INSPO=items;console.log(`✓ Shot list: ${items.length} concepts with inspo links`);}
-  }catch(e){console.log('Shot list fetch error:',e);}
+  }catch(e){console.log('Shot list fetch error:',e.message);}
 }
 
 function parseShotListCSV(csv){
@@ -504,7 +504,7 @@ function getInspoLinks(content){
     calWords.forEach(cw=>{shotWords.forEach(sw=>{if(sw===cw)score+=2;else if(sw.includes(cw)||cw.includes(sw))score+=1;});});
     if(score>bestScore){bestScore=score;bestMatch=links;}
   });
-  return bestScore>=2?bestMatch:[];
+  return bestScore>=1?bestMatch:[];
 }
 
 // Parse a row from the calendar sheet into our item format
