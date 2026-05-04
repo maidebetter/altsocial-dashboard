@@ -345,9 +345,9 @@ function subscribeRealtime(){
   setInterval(async()=>{
     await loadFromSupabase();
   },10000);
-  // Refresh Google Sheets every 60 seconds so new rows show up automatically
+  // Refresh Google Sheets and shot list every 60 seconds
   setInterval(async()=>{
-    await fetchSheetData();
+    await Promise.all([fetchSheetData(), fetchShotList()]);
     renderAll();
   },60000);
 }
@@ -452,6 +452,60 @@ const SHEET_IDS={
 
 // Fallback static data kept as backup
 let ORLANDO=[], TAMPA=[], TIKTOK=[], TAMPA_SHOTS=[];
+let SHOT_LIST_INSPO=[];
+
+async function fetchShotList(){
+  try{
+    const SHOT_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=985053640&single=true&output=csv';
+    const resp=await fetch(SHOT_URL);
+    if(!resp.ok)throw new Error('shot list fetch failed');
+    const csv=await resp.text();
+    const items=parseShotListCSV(csv);
+    if(items.length>0){SHOT_LIST_INSPO=items;console.log(`✓ Shot list: ${items.length} concepts with inspo links`);}
+  }catch(e){console.log('Shot list fetch error:',e);}
+}
+
+function parseShotListCSV(csv){
+  function parseCSVLine(line){
+    const result=[];let cur='';let inQ=false;
+    for(let i=0;i<line.length;i++){
+      const ch=line[i];
+      if(ch==='"'){if(inQ&&line[i+1]==='"'){cur+='"';i++;}else inQ=!inQ;}
+      else if(ch===','&&!inQ){result.push(cur.trim());cur='';}
+      else cur+=ch;
+    }
+    result.push(cur.trim());return result;
+  }
+  const lines=csv.split('\n');const items=[];
+  for(const line of lines){
+    if(!line.trim())continue;
+    const row=parseCSVLine(line);
+    const concept=(row[1]||row[0]||'').trim();
+    if(!concept||concept.length<3)continue;
+    const links=[];
+    for(const cell of row){
+      const matches=cell.match(/https?:\/\/(?:www\.)?(?:instagram\.com|tiktok\.com)[^\s,"]*/g);
+      if(matches)links.push(...matches);
+    }
+    if(links.length>0)items.push({concept:concept.toLowerCase(),links});
+  }
+  return items;
+}
+
+function getInspoLinks(content){
+  if(!content||!SHOT_LIST_INSPO.length)return[];
+  const stopWords=new Set(['the','a','an','and','or','to','in','of','for','with','on','at','is','it','this','that','we','i','my','our','you','your','its','are','was','be','have','has','do','did','not','but','so','if','as','by','up','out','can','will','just','now','all','when','what','how','who','get','got','need','want','like','see','know','think','go','come','make','take','give','show','tell','let','put','use','say','new','more','some','any','from','they','them','their','there','then','than','would','could','should']);
+  const calWords=content.toLowerCase().split(/\s+/).filter(w=>w.length>2&&!stopWords.has(w));
+  if(!calWords.length)return[];
+  let bestMatch=null;let bestScore=0;
+  SHOT_LIST_INSPO.forEach(({concept,links})=>{
+    const shotWords=concept.split(/\s+/).filter(w=>w.length>2&&!stopWords.has(w));
+    let score=0;
+    calWords.forEach(cw=>{shotWords.forEach(sw=>{if(sw===cw)score+=2;else if(sw.includes(cw)||cw.includes(sw))score+=1;});});
+    if(score>bestScore){bestScore=score;bestMatch=links;}
+  });
+  return bestScore>=2?bestMatch:[];
+}
 
 // Parse a row from the calendar sheet into our item format
 function parseSheetRow(row, city){
@@ -642,11 +696,14 @@ function dlInfo(item){
 
 function fmtAssets(item,inCard){
   const assets=getAssets(city,item);
-  const inspo=item.links||[];
+  const sheetInspo=item.links||[];
+  // Also get fuzzy-matched inspo links from shot list
+  const shotInspo=getInspoLinks(item.content);
+  // Merge — sheet links first, then shot list matches (deduped)
+  const allInspo=[...sheetInspo,...shotInspo.filter(l=>!sheetInspo.includes(l))];
   let html='<div class="assets-section">';
-  if(inspo.length){html+='<div class="assets-row">';inspo.forEach((l,i)=>{html+=`<a class="inspo-link" href="${l}" target="_blank">Inspo ${i+1}</a>`;});html+='</div>';}
+  if(allInspo.length){html+='<div class="assets-row">';allInspo.forEach((l,i)=>{html+=`<a class="inspo-link" href="${l}" target="_blank">Inspo ${i+1}</a>`;});html+='</div>';}
   if(assets.length){html+='<div class="assets-row">';assets.forEach((a,i)=>{const cls=a.type==='video'?'asset-chip asset-video':'asset-chip asset-photo';const icon=a.type==='video'?'▶ ':'🖼 ';html+=`<a class="${cls}" href="${a.url}" target="_blank">${icon}${a.label||'Asset '+(i+1)}</a>`;});html+='</div>';}
-  // Show upload form on ALL non-done posts — cards AND calendar rows
   if(!DONE_STATES.includes(getStatus(city,item))&&!isTBD(item.content)){
     const fid='af-'+item.date.replace('/','d')+'-'+item.content.replace(/[^a-z0-9]/gi,'').substring(0,15);
     html+=`<div class="asset-add-row">
@@ -1121,6 +1178,8 @@ document.getElementById('save-pill').style.opacity='1';
 buildPersonBar();
 // Load sheets first, then Supabase statuses, then render
 fetchSheetData().then(()=>{
+  return fetchShotList();
+}).then(()=>{
   return loadFromSupabase();
 }).then(()=>{
   subscribeRealtime();
