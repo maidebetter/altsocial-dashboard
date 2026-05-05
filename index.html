@@ -1078,10 +1078,12 @@ function openPanel(type){
         <span class="st-badge" style="${STATUS_BADGE[st]};margin-top:5px;display:inline-block;">${STATUS_LABELS[st]}</span>
         ${showChips?fmtApproverChips(item,false):''}
         ${postingStatus}
-        ${allAssets.length?`<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;">${allAssets.map(a=>{
-          const cls=a.type==='video'?'asset-chip asset-video':a.type==='photo'?'asset-chip asset-photo':'inspo-link';
-          const icon=a.type==='video'?'▶ ':a.type==='photo'?'▶ ':'';
-          return `<a class="${cls}" href="${a.url}" target="_blank">${icon}${a.label}</a>`;
+        ${allAssets.length?`<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;">${allAssets.map((a,i)=>{
+          if(a.type==='inspo'){return`<a class="inspo-link" href="${a.url}" target="_blank">${a.label}</a>`;}
+          const cls=a.type==='video'?'asset-chip asset-video':'asset-chip asset-photo';
+          const assetIdx=getAssets(city,item).findIndex(x=>x.url===a.url);
+          const delBtn=assetIdx>=0?`<button class="asset-chip-del" onclick="deleteAsset('${city}','${item.date}','${item.content.replace(/'/g,"\\'")}',${assetIdx});closePanel();setTimeout(()=>openPanel('${type}'),200);" title="Remove">✕</button>`:'';
+          return `<span class="${cls}"><a href="${a.url}" target="_blank" style="color:inherit;text-decoration:none;">▶ ${a.label||'Asset '+(i+1)}</a>${delBtn}</span>`;
         }).join('')}</div>`:''}
       </div>`;
     }).join('');
