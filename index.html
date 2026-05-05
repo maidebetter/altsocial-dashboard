@@ -322,8 +322,10 @@ async function loadFromSupabase(){
   ]);
   // Populate caches
   statuses.forEach(r=>{if(r.item_key)statusCache[r.item_key]=r.status;});
-  // Group assets by item_key
+  // Group assets by item_key — skip any URLs that were recently deleted
   assets.forEach(r=>{
+    if(!r.item_key)return;
+    if(deletedAssetUrls.has(r.url))return; // skip deleted assets
     if(!assetsCache[r.item_key])assetsCache[r.item_key]=[];
     if(!assetsCache[r.item_key].find(a=>a.url===r.url)){
       assetsCache[r.item_key].push({url:r.url,label:r.label,type:r.type,id:r.id});
@@ -735,6 +737,9 @@ function setAT(fid,type){
   else{v.className='asset-type-btn vid';i.className='asset-type-btn on img';}
 }
 
+// Track deleted asset URLs so polling doesn't restore them
+const deletedAssetUrls=new Set();
+
 async function deleteAsset(c,date,content,assetIndex){
   const data=c==='orlando'?ORLANDO:c==='tampa'?TAMPA:TIKTOK;
   const item=data.find(r=>r.date===date&&r.content===content);
@@ -743,13 +748,15 @@ async function deleteAsset(c,date,content,assetIndex){
   const assets=assetsCache[key]||[];
   const toDelete=assets[assetIndex];
   if(!toDelete)return;
-  // Remove from cache
+  // Track this URL as deleted so polling won't restore it
+  deletedAssetUrls.add(toDelete.url);
+  // Remove from cache immediately
   assetsCache[key]=assets.filter((_,i)=>i!==assetIndex);
-  // Delete from Supabase by URL match
+  renderAll();
+  // Delete from Supabase
   try{
     await sbDelete('assets',`item_key=eq.${encodeURIComponent(key)}&url=eq.${encodeURIComponent(toDelete.url)}`);
   }catch(e){console.log('delete asset error',e);}
-  renderAll();
 }
 
 function addAsset(c,date,content,fid){
