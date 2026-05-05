@@ -819,6 +819,9 @@ function renderApprovalQueue(){
     const otherApv=getApproval(c,item,otherWho);
     const cityLabel=c==='orlando'?'🌴 Orlando':'🌊 Tampa';
     const ik=`'${c}','${item.date}','${item.content.replace(/'/g,"\\'")}','${person}','approved'`;
+    // Show feedback note from either approver if it exists
+    const fb=getFeedback(c,item);
+    const feedbackHtml=fb&&fb.note?`<div class="cr-note" style="margin-top:7px;"><div class="cr-note-label">Change request from ${fb.who}</div>${fb.note}</div>`:'';
     return `<div class="aq-item" data-city="${c}" data-date="${item.date}" data-content="${item.content.replace(/"/g,'&quot;')}" data-who="${person}">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">
         <span style="font-size:9px;font-weight:700;padding:2px 8px;border-radius:20px;background:${c==='orlando'?'var(--blue-dim)':'var(--pink-dim)'};color:${c==='orlando'?'var(--blue)':'var(--pink)'};">${cityLabel}</span>
@@ -826,6 +829,7 @@ function renderApprovalQueue(){
       <div class="aq-item-title">${item.content}</div>
       <div class="aq-item-meta">${item.day} · Posts ${item.date} · ${item.who||'—'}</div>
       ${all.length?`<div class="aq-assets">${all.map(a=>{const cls=a.type==='video'?'asset-chip asset-video':a.type==='photo'?'asset-chip asset-photo':'inspo-link';const icon=a.type==='video'?'▶ ':a.type==='photo'?'🖼 ':'';return`<a class="${cls}" href="${a.url}" target="_blank" style="font-size:10px;">${icon}${a.label}</a>`;}).join('')}</div>`:''}
+      ${feedbackHtml}
       <div class="aq-approvers">${otherWho}: <span class="${otherApv==='approved'?'ok':''}">${otherApv==='approved'?'✓ Approved':otherApv==='rejected'?'✗ Requested changes':'Pending'}</span></div>
       <div class="aq-actions">
         <button class="aq-approve ${myApv==='approved'?'done':''}" onclick="doApprove('${c}','${item.date}','${item.content.replace(/'/g,"\\'")}','${person}','approved')">${myApv==='approved'?'✓ You approved':'Approve'}</button>
@@ -967,9 +971,11 @@ function openPanel(type){
   } else if(type==='awaiting'){
     items=vis.filter(r=>getStatus(city,r)==='sent');
   } else if(type==='approved'){
-    items=DATA.filter(r=>matchesPerson(r)&&!isTBD(r.content)&&(getStatus(city,r)==='complete'||getStatus(city,r)==='no-approval'));
+    const isApprover=APPROVERS.includes(person);
+    items=DATA.filter(r=>(isApprover||matchesPerson(r))&&!isTBD(r.content)&&(getStatus(city,r)==='complete'||getStatus(city,r)==='no-approval'));
   } else if(type==='posted'){
-    items=DATA.filter(r=>matchesPerson(r)&&!isTBD(r.content)&&(getStatus(city,r)==='posted-ig'||getStatus(city,r)==='posted-tiktok'));
+    const isApprover=APPROVERS.includes(person);
+    items=DATA.filter(r=>(isApprover||matchesPerson(r))&&!isTBD(r.content)&&(getStatus(city,r)==='posted-ig'||getStatus(city,r)==='posted-tiktok'));
   } else if(type==='done'){
     items=DATA.filter(r=>matchesPerson(r)&&isDone(city,r)&&!isTBD(r.content));
   }
@@ -1135,10 +1141,12 @@ function renderAll(){
   });
   const sentItems=vis.filter(r=>getStatus(city,r)==='sent');
   const upcomingItems=vis.filter(r=>!isDone(city,r));
-  // Approved = signed off but not yet posted (complete or no-approval)
-  const approvedItems=DATA.filter(r=>matchesPerson(r)&&!isTBD(r.content)&&(getStatus(city,r)==='complete'||getStatus(city,r)==='no-approval'));
-  // Posted = actually live somewhere
-  const postedItems=DATA.filter(r=>matchesPerson(r)&&!isTBD(r.content)&&(getStatus(city,r)==='posted-ig'||getStatus(city,r)==='posted-tiktok'));
+  // Approved & Posted: Kevin and Emily see ALL team posts (birds-eye), others see their own
+  const approvedFilter=r=>!isTBD(r.content)&&(getStatus(city,r)==='complete'||getStatus(city,r)==='no-approval');
+  const postedFilter=r=>!isTBD(r.content)&&(getStatus(city,r)==='posted-ig'||getStatus(city,r)==='posted-tiktok');
+  const isApprover=APPROVERS.includes(person);
+  const approvedItems=DATA.filter(r=>isApprover?approvedFilter(r):matchesPerson(r)&&approvedFilter(r));
+  const postedItems=DATA.filter(r=>isApprover?postedFilter(r):matchesPerson(r)&&postedFilter(r));
   const todayItems=DATA.filter(r=>{const d=parseDate(r.date);return d&&d.getTime()===t.getTime()&&matchesPerson(r)&&!isTBD(r.content);});
   document.getElementById('m0').textContent=dueItems.length;
   document.getElementById('m1').textContent=upcomingItems.length;
