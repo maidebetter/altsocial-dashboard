@@ -111,6 +111,8 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--black);color:
 .inspo-link{font-size:10px;padding:3px 10px;border:1px solid var(--blue-dim);border-radius:20px;color:var(--blue);text-decoration:none;font-weight:500;transition:all .15s;}
 .inspo-link:hover{background:var(--blue-dim);}
 .asset-chip{font-size:10px;padding:3px 10px;border-radius:20px;text-decoration:none;font-weight:600;display:inline-flex;align-items:center;gap:3px;transition:all .15s;}
+.asset-chip-del{background:none;border:none;color:inherit;cursor:pointer;opacity:.6;padding:0;margin-left:2px;font-size:11px;line-height:1;}
+.asset-chip-del:hover{opacity:1;}
 .asset-video{border:1px solid rgba(255,255,140,.35);color:var(--yellow);background:var(--yellow-dim);}
 .asset-video:hover{background:rgba(255,255,140,.2);}
 .asset-photo{border:1px solid rgba(245,160,182,.35);color:var(--pink);background:var(--pink-dim);}
@@ -703,7 +705,7 @@ function fmtAssets(item,inCard){
   const allInspo=[...sheetInspo,...shotInspo.filter(l=>!sheetInspo.includes(l))];
   let html='<div class="assets-section">';
   if(allInspo.length){html+='<div class="assets-row">';allInspo.forEach((l,i)=>{html+=`<a class="inspo-link" href="${l}" target="_blank">Inspo ${i+1}</a>`;});html+='</div>';}
-  if(assets.length){html+='<div class="assets-row">';assets.forEach((a,i)=>{const cls=a.type==='video'?'asset-chip asset-video':'asset-chip asset-photo';const icon=a.type==='video'?'▶ ':'🖼 ';html+=`<a class="${cls}" href="${a.url}" target="_blank">${icon}${a.label||'Asset '+(i+1)}</a>`;});html+='</div>';}
+  if(assets.length){html+='<div class="assets-row">';assets.forEach((a,i)=>{const cls=a.type==='video'?'asset-chip asset-video':'asset-chip asset-photo';const icon=a.type==='video'?'▶ ':'▶ ';html+=`<span class="${cls}"><a href="${a.url}" target="_blank" style="color:inherit;text-decoration:none;">${icon}${a.label||'Asset '+(i+1)}</a><button class="asset-chip-del" onclick="deleteAsset('${city}','${item.date}','${item.content.replace(/'/g,"\\'")}',${i})" title="Remove">✕</button></span>`;});html+='</div>';}
   if(!DONE_STATES.includes(getStatus(city,item))&&!isTBD(item.content)){
     const fid='af-'+item.date.replace('/','d')+'-'+item.content.replace(/[^a-z0-9]/gi,'').substring(0,15);
     html+=`<div class="asset-add-row">
@@ -723,6 +725,23 @@ function setAT(fid,type){
   const v=document.getElementById(fid+'tv');const i=document.getElementById(fid+'ti');
   if(type==='video'){v.className='asset-type-btn on vid';i.className='asset-type-btn img';}
   else{v.className='asset-type-btn vid';i.className='asset-type-btn on img';}
+}
+
+async function deleteAsset(c,date,content,assetIndex){
+  const data=c==='orlando'?ORLANDO:c==='tampa'?TAMPA:TIKTOK;
+  const item=data.find(r=>r.date===date&&r.content===content);
+  if(!item)return;
+  const key=assetsKey(c,item);
+  const assets=assetsCache[key]||[];
+  const toDelete=assets[assetIndex];
+  if(!toDelete)return;
+  // Remove from cache
+  assetsCache[key]=assets.filter((_,i)=>i!==assetIndex);
+  // Delete from Supabase by URL match
+  try{
+    await sbDelete('assets',`item_key=eq.${encodeURIComponent(key)}&url=eq.${encodeURIComponent(toDelete.url)}`);
+  }catch(e){console.log('delete asset error',e);}
+  renderAll();
 }
 
 function addAsset(c,date,content,fid){
@@ -828,7 +847,7 @@ function renderApprovalQueue(){
       </div>
       <div class="aq-item-title">${item.content}</div>
       <div class="aq-item-meta">${item.day} · Posts ${item.date} · ${item.who||'—'}</div>
-      ${all.length?`<div class="aq-assets">${all.map(a=>{const cls=a.type==='video'?'asset-chip asset-video':a.type==='photo'?'asset-chip asset-photo':'inspo-link';const icon=a.type==='video'?'▶ ':a.type==='photo'?'🖼 ':'';return`<a class="${cls}" href="${a.url}" target="_blank" style="font-size:10px;">${icon}${a.label}</a>`;}).join('')}</div>`:''}
+      ${all.length?`<div class="aq-assets">${all.map(a=>{const cls=a.type==='video'?'asset-chip asset-video':a.type==='photo'?'asset-chip asset-photo':'inspo-link';const icon=a.type==='video'?'▶ ':a.type==='photo'?'▶ ':'';return`<a class="${cls}" href="${a.url}" target="_blank" style="font-size:10px;">${icon}${a.label}</a>`;}).join('')}</div>`:''}
       ${feedbackHtml}
       <div class="aq-approvers">${otherWho}: <span class="${otherApv==='approved'?'ok':''}">${otherApv==='approved'?'✓ Approved':otherApv==='rejected'?'✗ Requested changes':'Pending'}</span></div>
       <div class="aq-actions">
@@ -933,8 +952,25 @@ function selectStatus(c,date,content,s,ddId){
   if(menu)menu.classList.remove('open');
 }
 
-document.addEventListener('click',()=>{
-  document.querySelectorAll('.status-dd-menu.open').forEach(m=>m.classList.remove('open'));
+// Protect asset input fields from browser autocomplete clearing
+document.addEventListener('focusin',(e)=>{
+  if(e.target.classList.contains('asset-input')){
+    const input=e.target;
+    // Store value on every input event
+    input.addEventListener('input',()=>{ input.dataset.savedVal=input.value; });
+    // Restore if browser clears it
+    const guard=setInterval(()=>{
+      if(document.activeElement===input&&input.dataset.savedVal&&!input.value){
+        input.value=input.dataset.savedVal;
+      }
+    },100);
+    input.addEventListener('blur',()=>clearInterval(guard),{once:true});
+  }
+
+document.addEventListener('click',(e)=>{
+  if(!e.target.closest('.status-dropdown')){
+    document.querySelectorAll('.status-dd-menu.open').forEach(m=>m.classList.remove('open'));
+  }
 });
 
 function closePanel(){
@@ -1019,7 +1055,7 @@ function openPanel(type){
         ${postingStatus}
         ${allAssets.length?`<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;">${allAssets.map(a=>{
           const cls=a.type==='video'?'asset-chip asset-video':a.type==='photo'?'asset-chip asset-photo':'inspo-link';
-          const icon=a.type==='video'?'▶ ':a.type==='photo'?'🖼 ':'';
+          const icon=a.type==='video'?'▶ ':a.type==='photo'?'▶ ':'';
           return `<a class="${cls}" href="${a.url}" target="_blank">${icon}${a.label}</a>`;
         }).join('')}</div>`:''}
       </div>`;
