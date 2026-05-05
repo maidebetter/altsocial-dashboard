@@ -539,10 +539,11 @@ async function fetchSheetData(){
     document.getElementById('save-pill').textContent='Loading...';
     document.getElementById('save-pill').style.opacity='1';
 
-    // Fetch from published CSV URL — no CORS issues from GitHub Pages
-    const PUBLISHED_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?output=csv';
+    const ORL_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?output=csv';
+    // Tampa — live from published sheet
+    const TPA_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vS3pxTfF1C7UPjcaZJ6t4eG_HRUY_k7RSwkvtEi3KDaDGMSIRAcxA6RIWIeivNR_OZm0OMUxdeZ5Yrg/pub?gid=1474113109&single=true&output=csv';
 
-    const resp = await fetch(PUBLISHED_URL);
+    const resp = await fetch(ORL_URL);
     if(!resp.ok) throw new Error('fetch failed: '+resp.status);
     const csv = await resp.text();
     const parsed = parseCalendarCSV(csv);
@@ -553,6 +554,21 @@ async function fetchSheetData(){
     } else {
       console.log('Parse too short, using fallback. Rows:', parsed.length);
       loadFallbackData();
+    }
+
+    // Fetch Tampa if URL is available
+    if(TPA_URL){
+      try{
+        const tpaResp=await fetch(TPA_URL);
+        if(tpaResp.ok){
+          const tpaCsv=await tpaResp.text();
+          const tpaParsed=parseCalendarCSV(tpaCsv);
+          if(tpaParsed.length>3){
+            TAMPA=tpaParsed;
+            console.log(`✓ Tampa: ${TAMPA.length} items from live sheet`);
+          }
+        }
+      }catch(e){console.log('Tampa fetch error:',e.message);}
     }
   } catch(e){
     console.log('Sheet fetch error, using fallback:', e);
@@ -648,16 +664,26 @@ function loadFallbackData(){
   TAMPA=[
   {date:'4/20',day:'Mon 7PM',content:'Announcement video',who:'Kevin',links:[]},
   {date:'4/20',day:'Mon 7PM',content:'What $40 can get you carousel',who:'Kevin',links:[]},
-  {date:'4/22',day:'Wed',content:'Google Earth',who:'Cory',links:['https://www.instagram.com/reel/DLaqR7BSjSw/?igsh=MXZsMTBjZzA4bGxzbA%3D%3D']},
+  {date:'4/22',day:'Wed',content:'Google Earth',who:'Cory',links:[]},
   {date:'4/24',day:'Fri',content:'What if',who:'Cory',links:[]},
-  {date:'4/26',day:'Sun',content:"Tampa's fav wellness venue",who:'Cory',links:['https://www.instagram.com/reel/DU30pp6j0ib/?igsh=MTNwYnRtdXd4aXBjdQ%3D%3D']},
-  {date:'4/28',day:'Tue',content:'FAQ',who:'Cory',links:['https://www.instagram.com/reel/DXW5UfjDp3y/?img_index=3&igsh=MWFic3NzZGsybnV1bg==']},
-  {date:'4/29',day:'Wed',content:'Who wants to go to',who:'Cory/Lindy',links:['https://www.instagram.com/reel/DVwvee4jTeL/?igsh=aGVnYm81am1pNW5l']},
-  {date:'5/1',day:'Fri',content:'Billboard',who:'Cory',links:['https://www.instagram.com/p/DT6CFeJkW_X/?igsh=cnQyOWM1azE4eGg5']},
-  {date:'5/3',day:'Sun',content:'Orangetheory class',who:'Cory',links:[]},
-  {date:'5/6',day:'Wed',content:'The person you send this to',who:'Cory',links:['https://www.instagram.com/reel/DWhQVkPD3j_/?igsh=MW4zaHk1YXIzcjM1dw==']},
-  {date:'5/7',day:'Thu',content:'Bodyrok class',who:'Cory',links:[]},
-  {date:'5/9',day:'Sat',content:'Me making sure',who:'Cory/Lindy',links:['https://www.instagram.com/reel/DWCEcapjFoU/?igsh=cXhiYnZwd3BzNXZi']},
+  {date:'4/26',day:'Sun',content:"Tampa's fav wellness venue",who:'Cory',links:[]},
+  {date:'4/28',day:'Tue',content:'FAQ',who:'Cory',links:[]},
+  {date:'4/29',day:'Wed',content:'Who wants to go to',who:'Cory/Lindy',links:[]},
+  {date:'5/1',day:'Fri',content:'Billboard',who:'Cory',links:[]},
+  {date:'5/4',day:'Mon',content:'The person you send this to',who:'Cory',links:[]},
+  {date:'5/6',day:'Wed',content:'buy the ticket',who:'Cory',links:[]},
+  {date:'5/7',day:'Thu',content:'Group exercise partners release',who:'Cory',links:[]},
+  {date:'5/9',day:'Sat',content:'When we hear',who:'Lindy',links:[]},
+  {date:'5/11',day:'Mon',content:'Fitness Zone - StudioFit',who:'Cory',links:[]},
+  {date:'5/12',day:'Tue',content:'Me making sure',who:'Lindy',links:[]},
+  {date:'5/16',day:'Sat',content:'Coffee partner - Casa Azul',who:'Cory',links:[]},
+  {date:'5/20',day:'Wed',content:'Hyrox Sim - OT',who:'Cory',links:[]},
+  {date:'5/27',day:'Wed',content:'Line Up',who:'Emily',links:[]},
+  {date:'5/31',day:'Sun',content:'5 days until tampa launch',who:'Cory',links:[]},
+  {date:'6/1',day:'Mon',content:'What to Know',who:'Emily',links:[]},
+  {date:'6/4',day:'Thu',content:'Duck see u soon',who:'Cory',links:[]},
+  {date:'6/5',day:'Fri',content:'First timer post',who:'Cory',links:[]},
+  {date:'6/6',day:'Sat',content:'Event Day',who:'',links:[]},
   ];
   TAMPA_SHOTS=[
   {name:'Tampa City Shots / Armature Works',links:['https://www.instagram.com/reel/DCR21lpxsNk/?igsh=b28yZW1jNHA3emYw']},
@@ -679,8 +705,7 @@ function parseDate(s){
   // Dec dates belong to 2025, everything else to 2026
   const yr=m===12?2025:2026;
   return new Date(yr,m-1,d);
-}
-function today(){const n=new Date();return new Date(n.getFullYear(),n.getMonth(),n.getDate());}
+}function today(){const n=new Date();return new Date(n.getFullYear(),n.getMonth(),n.getDate());}
 function matchesPerson(item){if(person==='All')return true;return item.who&&item.who.toLowerCase().includes(person.toLowerCase());}
 function isTBD(c){return !c||c==='TBD';}
 function isDone(c,item){return DONE_STATES.includes(getStatus(c,item));}
@@ -1149,7 +1174,8 @@ function renderCal(){
     {l:'Week 3',s:new Date(2026,4,3),e:new Date(2026,4,9)},
     {l:'Week 4',s:new Date(2026,4,10),e:new Date(2026,4,16)},
     {l:'Week 5',s:new Date(2026,4,17),e:new Date(2026,4,23)},
-    {l:'Week 6 / Event Week',s:new Date(2026,4,24),e:new Date(2026,4,31)},
+    {l:'Week 6',s:new Date(2026,4,24),e:new Date(2026,4,31)},
+    {l:'Event Week',s:new Date(2026,5,1),e:new Date(2026,5,6)},
   ]:[
     {l:'Dec 2025',s:new Date(2025,11,1),e:new Date(2025,11,31)},
     {l:'Jan 2026',s:new Date(2026,0,1),e:new Date(2026,0,31)},
