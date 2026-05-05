@@ -778,9 +778,13 @@ async function deleteAsset(c,date,content,assetIndex){
   // Remove from cache immediately
   assetsCache[key]=assets.filter((_,i)=>i!==assetIndex);
   renderAll();
-  // Delete from Supabase
+  // Delete from Supabase — use proper filter syntax
   try{
-    await sbDelete('assets',`item_key=eq.${encodeURIComponent(key)}&url=eq.${encodeURIComponent(toDelete.url)}`);
+    await fetch(`${SUPABASE_URL}/rest/v1/assets?item_key=eq.${encodeURIComponent(key)}&url=eq.${encodeURIComponent(toDelete.url)}`,{
+      method:'DELETE',
+      headers:SB_HEADERS
+    });
+    console.log('Asset deleted from Supabase');
   }catch(e){console.log('delete asset error',e);}
 }
 
@@ -809,7 +813,10 @@ async function resubmitAsset(c,date,content,fid){
   // 1. Delete all old assets from Supabase
   const key=assetsKey(c,item);
   try{
-    await sbDelete('assets',`item_key=eq.${encodeURIComponent(key)}`);
+    await fetch(`${SUPABASE_URL}/rest/v1/assets?item_key=eq.${encodeURIComponent(key)}`,{
+      method:'DELETE',
+      headers:SB_HEADERS
+    });
   }catch(e){console.log('asset delete error',e);}
   assetsCache[key]=[];
 
