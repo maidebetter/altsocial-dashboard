@@ -982,6 +982,8 @@ document.addEventListener('focusin',(e)=>{
     },100);
     input.addEventListener('blur',()=>clearInterval(guard),{once:true});
   }
+});
+
 
 document.addEventListener('click',(e)=>{
   if(!e.target.closest('.status-dropdown')){
