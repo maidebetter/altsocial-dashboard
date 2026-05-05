@@ -887,11 +887,10 @@ function renderChangeRequests(){
     const latest=fbArr[0];
     const history=fbArr.slice(1);
     const fid='cr-'+item.date.replace('/','d')+'-'+item.content.replace(/[^a-z0-9]/gi,'').substring(0,15);
-    const historyHtml=history.length?`<div style="margin-top:6px;">${history.map(h=>`
-      <div class="cr-note" style="opacity:.4;margin-top:4px;">
-        <div class="cr-note-label" style="color:rgba(245,160,182,.6);">Previous — ${h.who} · ${new Date(h.ts).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>
-        ${h.note}
-      </div>`).join('')}</div>`:'';
+    const historyHtml=history.length?'<div style="margin-top:6px;">'+history.map(function(h){
+      const dt=new Date(h.ts).toLocaleDateString('en-US',{month:'short',day:'numeric'});
+      return '<div class="cr-note" style="opacity:.4;margin-top:4px;"><div class="cr-note-label" style="color:rgba(245,160,182,.6);">Previous — '+h.who+' · '+dt+'</div>'+h.note+'</div>';
+    }).join('')+'</div>':'';
     return `<div class="cr-item">
       <div class="cr-item-title">${item.content}</div>
       <div class="cr-item-meta">${item.day} · ${item.date} · Feedback from ${latest.who}</div>
