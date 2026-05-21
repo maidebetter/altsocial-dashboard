@@ -563,6 +563,8 @@ async function fetchSheetData(){
     const ORL_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?output=csv';
     // Tampa — live from published sheet
     const TPA_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vS3pxTfF1C7UPjcaZJ6t4eG_HRUY_k7RSwkvtEi3KDaDGMSIRAcxA6RIWIeivNR_OZm0OMUxdeZ5Yrg/pub?gid=1474113109&single=true&output=csv';
+    // TikTok — Lindy's tab in the Orlando workbook
+    const TT_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=2092437778&single=true&output=csv';
 
     const resp = await fetch(ORL_URL);
     if(!resp.ok) throw new Error('fetch failed: '+resp.status);
@@ -590,6 +592,21 @@ async function fetchSheetData(){
           }
         }
       }catch(e){console.log('Tampa fetch error:',e.message);}
+    }
+
+    // Fetch TikTok (Lindy's tab) — different column layout
+    if(TT_URL){
+      try{
+        const ttResp=await fetch(TT_URL);
+        if(ttResp.ok){
+          const ttCsv=await ttResp.text();
+          const ttParsed=parseTikTokCSV(ttCsv);
+          if(ttParsed.length>3){
+            TIKTOK=ttParsed;
+            console.log(`✓ TikTok: ${TIKTOK.length} items from live sheet`);
+          }
+        }
+      }catch(e){console.log('TikTok fetch error:',e.message);}
     }
   } catch(e){
     console.log('Sheet fetch error, using fallback:', e);
@@ -633,6 +650,38 @@ function parseCalendarCSV(csv){
     const links=link&&link.startsWith('http')?[link]:[];
     const rec=reconcileDate(date,day);
     const item={date:rec.date,day:rec.day,content,who,links};
+    if(rec.originalDate)item.originalDate=rec.originalDate;
+    item._id=stableItemId(item);
+    items.push(item);
+  }
+  return items;
+}
+
+// TikTok tab has a different layout: date | day | status | content | stats | sponsor | followers
+// "who" is always Lindy; no link column.
+function parseTikTokCSV(csv){
+  function parseCSVLine(line){
+    const result=[];let cur='';let inQ=false;
+    for(let i=0;i<line.length;i++){
+      const ch=line[i];
+      if(ch==='"'){if(inQ&&line[i+1]==='"'){cur+='"';i++;}else inQ=!inQ;}
+      else if(ch===','&&!inQ){result.push(cur.trim());cur='';}
+      else cur+=ch;
+    }
+    result.push(cur.trim());return result;
+  }
+  const lines=csv.split('\n');
+  const items=[];
+  for(const line of lines){
+    if(!line.trim())continue;
+    const row=parseCSVLine(line);
+    const date=(row[0]||'').trim();
+    const day=(row[1]||'').trim();
+    const content=(row[3]||'').trim();
+    if(!date||!date.includes('/'))continue;
+    if(!content||content==='Content'||content.toLowerCase().startsWith('content '))continue;
+    const rec=reconcileDate(date,day);
+    const item={date:rec.date,day:rec.day,content,who:'Lindy',links:[]};
     if(rec.originalDate)item.originalDate=rec.originalDate;
     item._id=stableItemId(item);
     items.push(item);
@@ -1262,6 +1311,14 @@ function renderCal(){
     {l:'Feb 2026',s:new Date(2026,1,1),e:new Date(2026,1,28)},
     {l:'Mar 2026',s:new Date(2026,2,1),e:new Date(2026,2,31)},
     {l:'Apr 2026',s:new Date(2026,3,1),e:new Date(2026,3,30)},
+    {l:'May 2026',s:new Date(2026,4,1),e:new Date(2026,4,31)},
+    {l:'Jun 2026',s:new Date(2026,5,1),e:new Date(2026,5,30)},
+    {l:'Jul 2026',s:new Date(2026,6,1),e:new Date(2026,6,31)},
+    {l:'Aug 2026',s:new Date(2026,7,1),e:new Date(2026,7,31)},
+    {l:'Sep 2026',s:new Date(2026,8,1),e:new Date(2026,8,30)},
+    {l:'Oct 2026',s:new Date(2026,9,1),e:new Date(2026,9,31)},
+    {l:'Nov 2026',s:new Date(2026,10,1),e:new Date(2026,10,30)},
+    {l:'Dec 2026',s:new Date(2026,11,1),e:new Date(2026,11,31)},
   ];
   let html='';
   weeks.forEach(w=>{
