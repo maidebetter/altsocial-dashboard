@@ -1320,36 +1320,45 @@ function renderCal(){
     {l:'Nov 2026',s:new Date(2026,10,1),e:new Date(2026,10,30)},
     {l:'Dec 2026',s:new Date(2026,11,1),e:new Date(2026,11,31)},
   ];
+  function renderCalRow(r){
+    const st=getStatus(city,r);
+    const done=DONE_STATES.includes(st);
+    const tbd=isTBD(r.content);
+    const dl=dlInfo(r);
+    const isToday=parseDate(r.date)&&parseDate(r.date).getTime()===t.getTime();
+    const dotCls=tbd?'dot dot-tbd':done?'dot dot-done':dl&&dl.state==='overdue'?'dot dot-overdue':matchesPerson(r)&&person!=='All'?'dot dot-mine':'dot dot-other';
+    const contentLabel=tbd?'<span class="tbd-text">TBD</span>':r.content;
+    const stBadge=!tbd?`<span class="st-badge" style="${STATUS_BADGE[st]}">${STATUS_LABELS[st]}</span>`:'';
+    const showChips=(st==='sent'||st==='complete')&&!tbd;
+    const apvBtns=!tbd?`<div class="cal-apv">${renderApvBtns(city,r,true)}</div>`:'';
+    const dlStr=dl?`<div class="cal-dl ${dl.cls}">${dl.label}</div>`:'';
+    const assetHtml=!tbd?fmtAssets(r,false):'';
+    return `<div class="cal-row${isToday?' today-row':''}">
+      <div style="display:flex;align-items:flex-start;gap:3px;padding-top:3px;"><div class="dot ${dotCls}"></div><div class="cal-date">${dateLabel(r)}</div></div>
+      <div class="cal-day cal-day-col">${dayLabel(r)}</div>
+      <div>
+        <div class="cal-content">${contentLabel}</div>
+        <div class="cal-who">${r.who||''}</div>
+        ${stBadge}${showChips?fmtApproverChips(r,true):''}${apvBtns}${assetHtml}
+      </div>
+      <div>${dlStr}</div>
+    </div>`;
+  }
   let html='';
+  const bucketed=new Set();
   weeks.forEach(w=>{
     const wi=items.filter(r=>{const d=parseDate(r.date);return d&&d>=w.s&&d<=w.e;});
     if(!wi.length)return;
     html+=`<div class="week-hd">${w.l}</div>`;
-    wi.forEach(r=>{
-      const st=getStatus(city,r);
-      const done=DONE_STATES.includes(st);
-      const tbd=isTBD(r.content);
-      const dl=dlInfo(r);
-      const isToday=parseDate(r.date)&&parseDate(r.date).getTime()===t.getTime();
-      const dotCls=tbd?'dot dot-tbd':done?'dot dot-done':dl&&dl.state==='overdue'?'dot dot-overdue':matchesPerson(r)&&person!=='All'?'dot dot-mine':'dot dot-other';
-      const contentLabel=tbd?'<span class="tbd-text">TBD</span>':r.content;
-      const stBadge=!tbd?`<span class="st-badge" style="${STATUS_BADGE[st]}">${STATUS_LABELS[st]}</span>`:'';
-      const showChips=(st==='sent'||st==='complete')&&!tbd;
-      const apvBtns=!tbd?`<div class="cal-apv">${renderApvBtns(city,r,true)}</div>`:'';
-      const dlStr=dl?`<div class="cal-dl ${dl.cls}">${dl.label}</div>`:'';
-      const assetHtml=!tbd?fmtAssets(r,false):'';
-      html+=`<div class="cal-row${isToday?' today-row':''}">
-        <div style="display:flex;align-items:flex-start;gap:3px;padding-top:3px;"><div class="dot ${dotCls}"></div><div class="cal-date">${dateLabel(r)}</div></div>
-        <div class="cal-day cal-day-col">${dayLabel(r)}</div>
-        <div>
-          <div class="cal-content">${contentLabel}</div>
-          <div class="cal-who">${r.who||''}</div>
-          ${stBadge}${showChips?fmtApproverChips(r,true):''}${apvBtns}${assetHtml}
-        </div>
-        <div>${dlStr}</div>
-      </div>`;
-    });
+    wi.forEach(r=>{bucketed.add(r._id);html+=renderCalRow(r);});
   });
+  // Catch-all for items outside defined week ranges — sheet date may have moved past Event Day
+  const orphans=items.filter(r=>!bucketed.has(r._id));
+  if(orphans.length){
+    orphans.sort((a,b)=>{const da=parseDate(a.date),db=parseDate(b.date);return(da&&db)?(da-db):0;});
+    html+=`<div class="week-hd">Other</div>`;
+    orphans.forEach(r=>{html+=renderCalRow(r);});
+  }
   document.getElementById('cal-list').innerHTML=html||'<div class="empty">Nothing to show</div>';
 }
 
