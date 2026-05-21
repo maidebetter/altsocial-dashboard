@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -175,6 +176,7 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--black);color:
 .cal-apv{margin-top:5px;}
 .st-badge{font-size:9px;padding:2px 7px;border-radius:20px;display:inline-block;margin-top:3px;font-weight:600;}
 .tbd-text{color:var(--w3);font-style:italic;}
+.day-warn{display:inline-block;color:var(--yellow);font-size:10px;cursor:help;margin-left:3px;vertical-align:1px;}
 .shot-row{display:flex;align-items:center;gap:10px;padding:8px 6px;border-bottom:1px solid var(--border);}
 .shot-name{font-size:12px;color:var(--white);flex:1;font-weight:500;}
 .empty{font-size:12px;color:var(--w3);padding:12px 0;}
@@ -315,6 +317,26 @@ async function sbDelete(table,filter){
 }
 
 // ── LOAD ALL DATA FROM SUPABASE ──────────────────────────
+// Returns true if the user is mid-interaction; auto-sync should not rebuild the DOM.
+function isUserInteracting(){
+  // Unsubmitted text in any asset input or change-request textarea
+  for(const inp of document.querySelectorAll('.asset-input, .cr-textarea')){
+    if(inp.value && inp.value.trim()) return true;
+  }
+  // Status dropdown menu currently open
+  if(document.querySelector('.status-dd-menu.open')) return true;
+  // Change-request modal open
+  const mo=document.getElementById('cr-modal-overlay');
+  if(mo && mo.classList.contains('show')) return true;
+  // Drill-down panel open
+  const p=document.getElementById('panel');
+  if(p && p.style.display==='block') return true;
+  // Asset input currently focused (even if empty — they're about to type)
+  const a=document.activeElement;
+  if(a && a.classList && a.classList.contains('asset-input')) return true;
+  return false;
+}
+
 async function loadFromSupabase(){
   const [statuses,assets]=await Promise.all([
     sbGet('statuses','item_key=neq.null'),
@@ -342,21 +364,25 @@ async function loadFromSupabase(){
       }catch(e){}
     }
   });
-  renderAll();
-  document.getElementById('save-pill').textContent='Synced ✓';
-  showSave();
+  if(!isUserInteracting()){
+    renderAll();
+    document.getElementById('save-pill').textContent='Synced ✓';
+    showSave();
+  }
 }
 
 // ── REALTIME SUBSCRIPTION ────────────────────────────────
 function subscribeRealtime(){
   // Refresh Supabase statuses every 10 seconds
   setInterval(async()=>{
+    if(isUserInteracting())return;
     await loadFromSupabase();
   },10000);
   // Refresh Google Sheets and shot list every 60 seconds
   setInterval(async()=>{
+    if(isUserInteracting())return;
     await Promise.all([fetchSheetData(), fetchShotList()]);
-    renderAll();
+    if(!isUserInteracting())renderAll();
   },60000);
 }
 
@@ -413,14 +439,13 @@ function clearFeedback(c,item){
 function showSave(){const p=document.getElementById('save-pill');p.classList.add('show');clearTimeout(window._st);window._st=setTimeout(()=>p.classList.remove('show'),2000);}
 
 // Modal state
-let crPending={c:null,date:null,content:null,who:null};
+let crPending={c:null,itemId:null,who:null};
 
-function openCRModal(c,date,content,who){
-  crPending={c,date,content,who};
-  const data=c==='orlando'?ORLANDO:c==='tampa'?TAMPA:TIKTOK;
-  const item=data.find(r=>r.date===date&&r.content===content);
+function openCRModal(c,itemId,who){
+  crPending={c,itemId,who};
+  const item=findItemById(c,itemId);
   document.getElementById('cr-modal-title').textContent='Request Changes';
-  document.getElementById('cr-modal-sub').textContent=`"${content}" — tell the editor what needs fixing`;
+  document.getElementById('cr-modal-sub').textContent=`"${item?item.content:''}" — tell the editor what needs fixing`;
   document.getElementById('cr-textarea').value='';
   document.getElementById('cr-modal-overlay').classList.add('show');
   setTimeout(()=>document.getElementById('cr-textarea').focus(),100);
@@ -428,21 +453,17 @@ function openCRModal(c,date,content,who){
 
 function closeCRModal(){
   document.getElementById('cr-modal-overlay').classList.remove('show');
-  crPending={c:null,date:null,content:null,who:null};
+  crPending={c:null,itemId:null,who:null};
 }
 
 function submitCR(){
   const note=document.getElementById('cr-textarea').value.trim();
   if(!note)return;
-  const{c,date,content,who}=crPending;
-  const data=c==='orlando'?ORLANDO:c==='tampa'?TAMPA:TIKTOK;
-  const item=data.find(r=>r.date===date&&r.content===content);
+  const{c,itemId,who}=crPending;
+  const item=findItemById(c,itemId);
   if(!item){closeCRModal();return;}
-  // Save feedback note
   saveFeedback(c,item,note,who);
-  // Set approver's status to rejected
   setApproval(c,item,who,'rejected');
-  // Flip post back to in-progress
   saveStatus(c,item,'in-progress');
   closeCRModal();
   renderAll();
@@ -610,9 +631,24 @@ function parseCalendarCSV(csv){
     if(!date||!date.includes('/'))continue;
     if(!content||content==='Content')continue;
     const links=link&&link.startsWith('http')?[link]:[];
-    items.push({date,day,content,who,links});
+    const rec=reconcileDate(date,day);
+    const item={date:rec.date,day:rec.day,content,who,links};
+    if(rec.originalDate)item.originalDate=rec.originalDate;
+    item._id=stableItemId(item);
+    items.push(item);
   }
   return items;
+}
+
+function applyDayNormalization(arr){
+  return arr.map(it=>{
+    const rec=reconcileDate(it.date,it.day);
+    const out={...it,date:rec.date,day:rec.day};
+    if(rec.originalDate)out.originalDate=rec.originalDate;
+    else delete out.originalDate;
+    out._id=stableItemId(out);
+    return out;
+  });
 }
 
 function loadFallbackData(){
@@ -695,6 +731,8 @@ function loadFallbackData(){
   {name:'Duck promo',links:['https://www.instagram.com/reel/DURNMk7EtPw/?igsh=ejFhMHl4ejE0dWpt']},
   {name:'When you hear...',links:['https://www.tiktok.com/t/ZTkYFkNvv/']},
   ];
+  ORLANDO=applyDayNormalization(ORLANDO);
+  TAMPA=applyDayNormalization(TAMPA);
 }
 
 function getData(){return city==='orlando'?ORLANDO:city==='tampa'?TAMPA:TIKTOK;}
@@ -705,7 +743,51 @@ function parseDate(s){
   // Dec dates belong to 2025, everything else to 2026
   const yr=m===12?2025:2026;
   return new Date(yr,m-1,d);
-}function today(){const n=new Date();return new Date(n.getFullYear(),n.getMonth(),n.getDate());}
+}
+
+const DAY_NAMES=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const DAY_IDX={sun:0,mon:1,tue:2,wed:3,thu:4,fri:5,sat:6};
+function dayNameFromDate(dateStr){
+  const d=parseDate(dateStr);
+  return d?DAY_NAMES[d.getDay()]:null;
+}
+// Trust the day column. If the sheet's date doesn't match the day name,
+// shift the date to the nearest matching day-of-week in the same week.
+function reconcileDate(dateStr,dayStr){
+  const dateOnly=parseDate(dateStr);
+  if(!dateOnly)return{date:dateStr,day:dayStr||''};
+  const re=/\b(sun(?:day)?|mon(?:day)?|tue(?:s|sday)?|wed(?:nesday)?|thu(?:r|rs|rsday)?|fri(?:day)?|sat(?:urday)?)\b/i;
+  const m=(dayStr||'').match(re);
+  if(!m)return{date:dateStr,day:dayStr||''};
+  const intended=DAY_IDX[m[0].toLowerCase().slice(0,3)];
+  const actual=dateOnly.getDay();
+  if(intended===actual)return{date:dateStr,day:dayStr||''};
+  let diff=intended-actual;
+  if(diff>3)diff-=7;
+  if(diff<-3)diff+=7;
+  const adj=new Date(dateOnly);
+  adj.setDate(dateOnly.getDate()+diff);
+  const newDateStr=`${adj.getMonth()+1}/${adj.getDate()}`;
+  return{date:newDateStr,day:dayStr||'',originalDate:dateStr};
+}
+// Display helpers
+function dayLabel(item){return item?(item.day||''):'';}
+function dateLabel(item){
+  if(!item||!item.originalDate)return item?item.date:'';
+  return `${item.date} <span class="day-warn" title="Sheet had ${item.originalDate} but day says ${item.day} — using ${item.date}">⚠</span>`;
+}
+
+// Stable, HTML/JS-safe id for an item — base64(date + content) with URL-safe chars.
+function stableItemId(item){
+  const raw=(item.date||'')+''+(item.content||'');
+  return btoa(unescape(encodeURIComponent(raw))).replace(/[+/=]/g,ch=>({'+':'-','/':'_','=':''})[ch]);
+}
+function findItemById(c,id){
+  const data=c==='orlando'?ORLANDO:c==='tampa'?TAMPA:TIKTOK;
+  return data.find(r=>r._id===id);
+}
+
+function today(){const n=new Date();return new Date(n.getFullYear(),n.getMonth(),n.getDate());}
 function matchesPerson(item){if(person==='All')return true;return item.who&&item.who.toLowerCase().includes(person.toLowerCase());}
 function isTBD(c){return !c||c==='TBD';}
 function isDone(c,item){return DONE_STATES.includes(getStatus(c,item));}
@@ -740,16 +822,16 @@ function fmtAssets(item,inCard){
   const allInspo=[...sheetInspo,...shotInspo.filter(l=>!sheetInspo.includes(l))];
   let html='<div class="assets-section">';
   if(allInspo.length){html+='<div class="assets-row">';allInspo.forEach((l,i)=>{html+=`<a class="inspo-link" href="${l}" target="_blank">Inspo ${i+1}</a>`;});html+='</div>';}
-  if(assets.length){html+='<div class="assets-row">';assets.forEach((a,i)=>{const cls=a.type==='video'?'asset-chip asset-video':'asset-chip asset-photo';const icon=a.type==='video'?'▶ ':'▶ ';html+=`<span class="${cls}"><a href="${a.url}" target="_blank" style="color:inherit;text-decoration:none;">${icon}${a.label||'Asset '+(i+1)}</a><button class="asset-chip-del" onclick="deleteAsset('${city}','${item.date}','${item.content.replace(/'/g,"\\'")}',${i})" title="Remove">✕</button></span>`;});html+='</div>';}
+  if(assets.length){html+='<div class="assets-row">';assets.forEach((a,i)=>{const cls=a.type==='video'?'asset-chip asset-video':'asset-chip asset-photo';const icon=a.type==='video'?'▶ ':'▶ ';html+=`<span class="${cls}"><a href="${a.url}" target="_blank" style="color:inherit;text-decoration:none;">${icon}${a.label||'Asset '+(i+1)}</a><button class="asset-chip-del" onclick="deleteAsset('${city}','${item._id}',${i})" title="Remove">✕</button></span>`;});html+='</div>';}
   if(!DONE_STATES.includes(getStatus(city,item))&&!isTBD(item.content)){
-    const fid='af-'+item.date.replace('/','d')+'-'+item.content.replace(/[^a-z0-9]/gi,'').substring(0,15);
+    const fid='af-'+item._id;
     html+=`<div class="asset-add-row">
       <input class="asset-input" id="${fid}u" placeholder="Paste Google Drive or Dropbox link..." autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-form-type="other" />
       <div class="asset-type-toggle">
         <button class="asset-type-btn on vid" id="${fid}tv" onclick="setAT('${fid}','video')">Video</button>
         <button class="asset-type-btn img" id="${fid}ti" onclick="setAT('${fid}','photo')">Photo</button>
       </div>
-      <button class="asset-add-btn" onclick="addAsset('${city}','${item.date}','${item.content.replace(/'/g,"\\'")}','${fid}')">+ Add</button>
+      <button class="asset-add-btn" onclick="addAsset('${city}','${item._id}','${fid}')">+ Add</button>
     </div>`;
   }
   html+='</div>';return html;
@@ -762,39 +844,39 @@ function setAT(fid,type){
   else{v.className='asset-type-btn vid';i.className='asset-type-btn on img';}
 }
 
-// Track deleted asset URLs so polling doesn't restore them
-const deletedAssetUrls=new Set();
+// Track deleted asset URLs so polling/refresh doesn't restore them. Persisted across reloads.
+const _DELETED_LS_KEY='altsocial_deleted_asset_urls';
+const deletedAssetUrls=new Set(JSON.parse(localStorage.getItem(_DELETED_LS_KEY)||'[]'));
+function _saveDeletedUrls(){
+  try{localStorage.setItem(_DELETED_LS_KEY,JSON.stringify([...deletedAssetUrls]));}catch(e){}
+}
 
-async function deleteAsset(c,date,content,assetIndex){
-  const data=c==='orlando'?ORLANDO:c==='tampa'?TAMPA:TIKTOK;
-  const item=data.find(r=>r.date===date&&r.content===content);
+async function deleteAsset(c,itemId,assetIndex){
+  const item=findItemById(c,itemId);
   if(!item)return;
   const key=assetsKey(c,item);
   const assets=assetsCache[key]||[];
   const toDelete=assets[assetIndex];
   if(!toDelete)return;
-  // Track this URL as deleted so polling won't restore it
   deletedAssetUrls.add(toDelete.url);
-  // Remove from cache immediately
+  _saveDeletedUrls();
   assetsCache[key]=assets.filter((_,i)=>i!==assetIndex);
   renderAll();
-  // Delete from Supabase — use proper filter syntax
   try{
     await fetch(`${SUPABASE_URL}/rest/v1/assets?item_key=eq.${encodeURIComponent(key)}&url=eq.${encodeURIComponent(toDelete.url)}`,{
       method:'DELETE',
       headers:SB_HEADERS
     });
-    console.log('Asset deleted from Supabase');
   }catch(e){console.log('delete asset error',e);}
 }
 
-function addAsset(c,date,content,fid){
+function addAsset(c,itemId,fid){
   const u=document.getElementById(fid+'u');
   if(!u||!u.value.trim())return;
-  const data=c==='orlando'?ORLANDO:c==='tampa'?TAMPA:TIKTOK;
-  const item=data.find(r=>r.date===date&&r.content===content);
+  const item=findItemById(c,itemId);
   if(!item)return;
   const asset={url:u.value.trim(),label:'',type:assetTypeState[fid]||'video'};
+  if(deletedAssetUrls.has(asset.url)){deletedAssetUrls.delete(asset.url);_saveDeletedUrls();}
   const key=assetsKey(c,item);
   if(!assetsCache[key])assetsCache[key]=[];
   assetsCache[key].push(asset);
@@ -803,11 +885,10 @@ function addAsset(c,date,content,fid){
 }
 
 // Used from change request box — clears old assets, attaches new one, clears feedback, sends for approval
-async function resubmitAsset(c,date,content,fid){
+async function resubmitAsset(c,itemId,fid){
   const u=document.getElementById(fid+'u');
   if(!u||!u.value.trim()){alert('Please paste a link first.');return;}
-  const data=c==='orlando'?ORLANDO:c==='tampa'?TAMPA:TIKTOK;
-  const item=data.find(r=>r.date===date&&r.content===content);
+  const item=findItemById(c,itemId);
   if(!item)return;
 
   // 1. Delete all old assets from Supabase
@@ -822,6 +903,7 @@ async function resubmitAsset(c,date,content,fid){
 
   // 2. Add new asset
   const asset={url:u.value.trim(),label:'',type:assetTypeState[fid]||'video'};
+  if(deletedAssetUrls.has(asset.url)){deletedAssetUrls.delete(asset.url);_saveDeletedUrls();}
   assetsCache[key]=[asset];
   await addAssetToSupabase(c,item,asset);
 
@@ -884,22 +966,20 @@ function renderApprovalQueue(){
     const myApv=getApproval(c,item,person);
     const otherApv=getApproval(c,item,otherWho);
     const cityLabel=c==='orlando'?'🌴 Orlando':'🌊 Tampa';
-    const ik=`'${c}','${item.date}','${item.content.replace(/'/g,"\\'")}','${person}','approved'`;
-    // Show feedback note from either approver if it exists
     const fbArr=getFeedback(c,item);
     const latestFb=fbArr&&fbArr.length?fbArr[0]:null;
     const feedbackHtml=latestFb?`<div class="cr-note" style="margin-top:7px;"><div class="cr-note-label">Change request from ${latestFb.who}</div>${latestFb.note}</div>`:'';
-    return `<div class="aq-item" data-city="${c}" data-date="${item.date}" data-content="${item.content.replace(/"/g,'&quot;')}" data-who="${person}">
+    return `<div class="aq-item" data-city="${c}" data-id="${item._id}" data-who="${person}">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">
         <span style="font-size:9px;font-weight:700;padding:2px 8px;border-radius:20px;background:${c==='orlando'?'var(--blue-dim)':'var(--pink-dim)'};color:${c==='orlando'?'var(--blue)':'var(--pink)'};">${cityLabel}</span>
       </div>
       <div class="aq-item-title">${item.content}</div>
-      <div class="aq-item-meta">${item.day} · Posts ${item.date} · ${item.who||'—'}</div>
+      <div class="aq-item-meta">${dayLabel(item)} · Posts ${dateLabel(item)} · ${item.who||'—'}</div>
       ${all.length?`<div class="aq-assets">${all.map(a=>{const cls=a.type==='video'?'asset-chip asset-video':a.type==='photo'?'asset-chip asset-photo':'inspo-link';const icon=a.type==='video'?'▶ ':a.type==='photo'?'▶ ':'';return`<a class="${cls}" href="${a.url}" target="_blank" style="font-size:10px;">${icon}${a.label}</a>`;}).join('')}</div>`:''}
       ${feedbackHtml}
       <div class="aq-approvers">${otherWho}: <span class="${otherApv==='approved'?'ok':''}">${otherApv==='approved'?'✓ Approved':otherApv==='rejected'?'✗ Requested changes':'Pending'}</span></div>
       <div class="aq-actions">
-        <button class="aq-approve ${myApv==='approved'?'done':''}" onclick="doApprove('${c}','${item.date}','${item.content.replace(/'/g,"\\'")}','${person}','approved')">${myApv==='approved'?'✓ You approved':'Approve'}</button>
+        <button class="aq-approve ${myApv==='approved'?'done':''}" onclick="doApprove('${c}','${item._id}','${person}','approved')">${myApv==='approved'?'✓ You approved':'Approve'}</button>
         ${myApv!=='approved'?'<button class="aq-reject" onclick="handleCR(this)">Request changes</button>':''}
         <button class="aq-reject" style="background:rgba(255,255,255,.05);color:rgba(255,255,255,.4);border-color:rgba(255,255,255,.15);" onclick="handleNoApproval(this)">No approval needed</button>
       </div>
@@ -925,14 +1005,14 @@ function renderChangeRequests(){
     const fbArr=getFeedback(city,item);
     const latest=fbArr[0];
     const history=fbArr.slice(1);
-    const fid='cr-'+item.date.replace('/','d')+'-'+item.content.replace(/[^a-z0-9]/gi,'').substring(0,15);
+    const fid='cr-'+item._id;
     const historyHtml=history.length?'<div style="margin-top:6px;">'+history.map(function(h){
       const dt=new Date(h.ts).toLocaleDateString('en-US',{month:'short',day:'numeric'});
       return '<div class="cr-note" style="opacity:.4;margin-top:4px;"><div class="cr-note-label" style="color:rgba(245,160,182,.6);">Previous — '+h.who+' · '+dt+'</div>'+h.note+'</div>';
     }).join('')+'</div>':'';
     return `<div class="cr-item">
       <div class="cr-item-title">${item.content}</div>
-      <div class="cr-item-meta">${item.day} · ${item.date} · Feedback from ${latest.who}</div>
+      <div class="cr-item-meta">${dayLabel(item)} · ${dateLabel(item)} · Feedback from ${latest.who}</div>
       <div class="cr-note">
         <div class="cr-note-label">Latest — what needs to change</div>
         ${latest.note}
@@ -944,7 +1024,7 @@ function renderChangeRequests(){
           <button class="asset-type-btn on vid" id="${fid}tv" onclick="setAT('${fid}','video')">Video</button>
           <button class="asset-type-btn img" id="${fid}ti" onclick="setAT('${fid}','photo')">Photo</button>
         </div>
-        <button class="asset-add-btn" style="background:var(--pink-dim);color:var(--pink);border-color:rgba(245,160,182,.3);" onclick="resubmitAsset('${city}','${item.date}','${item.content.replace(/'/g,"\\'")}','${fid}')">↑ Resubmit</button>
+        <button class="asset-add-btn" style="background:var(--pink-dim);color:var(--pink);border-color:rgba(245,160,182,.3);" onclick="resubmitAsset('${city}','${item._id}','${fid}')">↑ Resubmit</button>
       </div>
     </div>`;
   }).join('');
@@ -952,21 +1032,16 @@ function renderChangeRequests(){
 
 // Helper functions for approval queue buttons (avoids nested template literals)
 function handleCR(btn){
-  const item=btn.closest('.aq-item');
-  const c=item.dataset.city;
-  const date=item.dataset.date;
-  const content=item.dataset.content;
-  const who=item.dataset.who;
-  openCRModal(c,date,content,who);
+  const el=btn.closest('.aq-item');
+  openCRModal(el.dataset.city,el.dataset.id,el.dataset.who);
 }
 function handleNoApproval(btn){
-  const item=btn.closest('.aq-item');
-  markStatusDirect(item.dataset.city,item.dataset.date,item.dataset.content,'no-approval');
+  const el=btn.closest('.aq-item');
+  markStatusDirect(el.dataset.city,el.dataset.id,'no-approval');
 }
 
-function doApprove(c,date,content,who,val){
-  const data=c==='orlando'?ORLANDO:TAMPA;
-  const item=data.find(r=>r.date===date&&r.content===content);
+function doApprove(c,itemId,who,val){
+  const item=findItemById(c,itemId);
   if(!item)return;
   setApproval(c,item,who,val);
   if(isBothApproved(item))saveStatus(c,item,'complete');
@@ -979,13 +1054,13 @@ function renderApvBtns(c,item,small){
 
 function renderStatusDropdown(c,item){
   const st=getStatus(c,item);
-  const ddId='dd-'+c+'-'+item.date.replace('/','x')+'-'+item.content.replace(/[^a-z0-9]/gi,'').substring(0,12);
+  const ddId='dd-'+item._id;
   const btnStyle=STATUS_BADGE[st]||'';
   const label=STATUS_LABELS[st]||'Not started';
   const options=STATUSES.map(s=>{
     const isActive=s===st;
     const sStyle=STATUS_BADGE[s]||'';
-    return `<button class="status-dd-option${isActive?' active':''}" style="${isActive?sStyle:''}" onclick="selectStatus('${c}','${item.date}','${item.content.replace(/'/g,"\\'")}','${s}','${ddId}')">${STATUS_LABELS[s]}</button>`;
+    return `<button class="status-dd-option${isActive?' active':''}" style="${isActive?sStyle:''}" onclick="selectStatus('${c}','${item._id}','${s}','${ddId}')">${STATUS_LABELS[s]}</button>`;
   }).join('');
   return `<div class="status-dropdown" id="${ddId}">
     <button class="status-dd-btn" style="${btnStyle}" onclick="toggleDD('${ddId}',event)">${label} <span class="dd-arrow">▾</span></button>
@@ -1001,8 +1076,8 @@ function toggleDD(ddId,e){
   document.getElementById(ddId+'-menu').classList.toggle('open');
 }
 
-function selectStatus(c,date,content,s,ddId){
-  markStatus(c,date,content,s);
+function selectStatus(c,itemId,s,ddId){
+  markStatus(c,itemId,s);
   const menu=document.getElementById(ddId+'-menu');
   if(menu)menu.classList.remove('open');
 }
@@ -1090,7 +1165,7 @@ function openPanel(type){
       // Posting status buttons — show in posted and approved panels
       const igPosted=st==='posted-ig'||st==='posted-tiktok';
       const ttPosted=st==='posted-tiktok';
-      const ik=`'${city}','${item.date}','${item.content.replace(/'/g,"\\'")}'`;
+      const ik=`'${city}','${item._id}'`;
 
       let postingStatus='';
       if(type==='posted'||type==='approved'){
@@ -1105,7 +1180,7 @@ function openPanel(type){
 
       return `<div class="card" style="margin-bottom:10px;opacity:1;">
         <div class="card-title">${item.content}</div>
-        <div class="card-meta">${item.day} · ${item.date} · ${item.who||'—'}</div>
+        <div class="card-meta">${dayLabel(item)} · ${dateLabel(item)} · ${item.who||'—'}</div>
         ${dl&&(type==='due'||type==='remaining')?`<div class="card-deadline ${dl.cls}">${dl.label}</div>`:''}
         <span class="st-badge" style="${STATUS_BADGE[st]};margin-top:5px;display:inline-block;">${STATUS_LABELS[st]}</span>
         ${showChips?fmtApproverChips(item,false):''}
@@ -1114,7 +1189,7 @@ function openPanel(type){
           if(a.type==='inspo'){return`<a class="inspo-link" href="${a.url}" target="_blank">${a.label}</a>`;}
           const cls=a.type==='video'?'asset-chip asset-video':'asset-chip asset-photo';
           const assetIdx=getAssets(city,item).findIndex(x=>x.url===a.url);
-          const delBtn=assetIdx>=0?`<button class="asset-chip-del" onclick="deleteAsset('${city}','${item.date}','${item.content.replace(/'/g,"\\'")}',${assetIdx});closePanel();setTimeout(()=>openPanel('${type}'),200);" title="Remove">✕</button>`:'';
+          const delBtn=assetIdx>=0?`<button class="asset-chip-del" onclick="deleteAsset('${city}','${item._id}',${assetIdx});closePanel();setTimeout(()=>openPanel('${type}'),200);" title="Remove">✕</button>`:'';
           return `<span class="${cls}"><a href="${a.url}" target="_blank" style="color:inherit;text-decoration:none;">▶ ${a.label||'Asset '+(i+1)}</a>${delBtn}</span>`;
         }).join('')}</div>`:''}
       </div>`;
@@ -1125,18 +1200,16 @@ function openPanel(type){
   document.getElementById('panel-overlay').style.display='block';
 }
 
-function markStatus(c,date,content,s){
-  const data=c==='orlando'?ORLANDO:c==='tampa'?TAMPA:TIKTOK;
-  const item=data.find(r=>r.date===date&&r.content===content);
+function markStatus(c,itemId,s){
+  const item=findItemById(c,itemId);
   if(item){
     saveStatus(c,item,s);
-    // Clear feedback when resubmitting for approval
     if(s==='sent')clearFeedback(c,item);
   }
   renderAll();
 }
 
-function markStatusDirect(c,date,content,s){markStatus(c,date,content,s);}
+function markStatusDirect(c,itemId,s){markStatus(c,itemId,s);}
 
 function renderCard(item,type){
   const st=getStatus(city,item);
@@ -1150,8 +1223,8 @@ function renderCard(item,type){
   const showChips=st==='sent'||st==='complete';
   return `<div class="${cls}">
     <div class="card-title">${item.content}</div>
-    <div class="card-meta">${item.day} · ${item.who||'—'}</div>
-    ${dl?`<div class="card-deadline ${dl.cls}">${dl.label} · posts ${item.date}</div>`:''}
+    <div class="card-meta">${dayLabel(item)} · ${item.who||'—'}</div>
+    ${dl?`<div class="card-deadline ${dl.cls}">${dl.label} · posts ${dateLabel(item)}</div>`:''}
     ${fmtAssets(item,true)}
     ${showChips?fmtApproverChips(item,false):''}
     <div class="apv-row">${renderApvBtns(city,item,false)}</div>
@@ -1209,8 +1282,8 @@ function renderCal(){
       const dlStr=dl?`<div class="cal-dl ${dl.cls}">${dl.label}</div>`:'';
       const assetHtml=!tbd?fmtAssets(r,false):'';
       html+=`<div class="cal-row${isToday?' today-row':''}">
-        <div style="display:flex;align-items:flex-start;gap:3px;padding-top:3px;"><div class="dot ${dotCls}"></div><div class="cal-date">${r.date}</div></div>
-        <div class="cal-day cal-day-col">${r.day}</div>
+        <div style="display:flex;align-items:flex-start;gap:3px;padding-top:3px;"><div class="dot ${dotCls}"></div><div class="cal-date">${dateLabel(r)}</div></div>
+        <div class="cal-day cal-day-col">${dayLabel(r)}</div>
         <div>
           <div class="cal-content">${contentLabel}</div>
           <div class="cal-who">${r.who||''}</div>
