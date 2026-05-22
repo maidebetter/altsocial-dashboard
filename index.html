@@ -489,7 +489,7 @@ let SHOT_LIST_INSPO=[];
 
 async function fetchShotList(){
   try{
-    const SHOT_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=586760791&single=true&output=csv';
+    const SHOT_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=1569977494&single=true&output=csv';
     const resp=await fetch(SHOT_URL);
     if(!resp.ok)throw new Error('shot list fetch failed');
     const csv=await resp.text();
@@ -1293,10 +1293,10 @@ function renderCal(){
     return true;
   });
   const weeks=city==='orlando'?[
-    {l:'Week 1',s:new Date(2026,3,25),e:new Date(2026,4,2)},
-    {l:'Week 2',s:new Date(2026,4,3),e:new Date(2026,4,9)},
-    {l:'Week 3',s:new Date(2026,4,10),e:new Date(2026,4,16)},
-    {l:'Week 4',s:new Date(2026,4,17),e:new Date(2026,4,23)},
+    {l:'Week 1',s:new Date(2026,4,23),e:new Date(2026,4,30)},
+    {l:'Week 2',s:new Date(2026,4,31),e:new Date(2026,5,6)},
+    {l:'Week 3',s:new Date(2026,5,7),e:new Date(2026,5,13)},
+    {l:'Event Week',s:new Date(2026,5,14),e:new Date(2026,5,20)},
   ]:city==='tampa'?[
     {l:'Week 1',s:new Date(2026,3,20),e:new Date(2026,3,25)},
     {l:'Week 2',s:new Date(2026,3,26),e:new Date(2026,4,2)},
