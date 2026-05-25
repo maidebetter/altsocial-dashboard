@@ -150,6 +150,7 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--black);color:
 .apv-sent{background:var(--blue-dim)!important;color:var(--blue)!important;border-color:rgba(56,182,255,.3)!important;}
 .apv-done{background:var(--green-dim)!important;color:var(--green)!important;border-color:rgba(94,232,160,.3)!important;}
 .apv-noapp{background:rgba(255,255,255,.07)!important;color:rgba(255,255,255,.5)!important;border-color:rgba(255,255,255,.2)!important;font-style:italic!important;}
+.apv-dnp{background:rgba(255,255,255,.1)!important;color:rgba(255,255,255,.7)!important;border-color:rgba(255,255,255,.35)!important;}
 .apv-ig{background:rgba(56,182,255,.2)!important;color:var(--blue)!important;border-color:var(--blue)!important;font-weight:700!important;}
 .apv-tiktok{background:rgba(245,160,182,.2)!important;color:var(--pink)!important;border-color:var(--pink)!important;font-weight:700!important;}
 .filter-row{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;}
@@ -280,11 +281,11 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--black);color:
 
 </div>
 <script>
-const STATUSES=['not-started','in-progress','sent','complete','no-approval','posted-ig','posted-tiktok'];
-const STATUS_LABELS={'not-started':'Not started','in-progress':'In progress','sent':'Sent for approval','complete':'Approved','no-approval':'No approval needed','posted-ig':'✓ Posted to IG','posted-tiktok':'✓ Posted to TikTok'};
-const STATUS_APV_CLS={'not-started':'apv-not','in-progress':'apv-prog','sent':'apv-sent','complete':'apv-done','no-approval':'apv-noapp','posted-ig':'apv-ig','posted-tiktok':'apv-tiktok'};
-const STATUS_BADGE={'not-started':'background:rgba(255,255,255,.07);color:rgba(255,255,255,.4);','in-progress':'background:rgba(255,255,140,.12);color:#FFFF8C;','sent':'background:rgba(56,182,255,.15);color:#38B6FF;','complete':'background:rgba(94,232,160,.15);color:#5EE8A0;','no-approval':'background:rgba(255,255,255,.07);color:rgba(255,255,255,.5);','posted-ig':'background:rgba(56,182,255,.2);color:#38B6FF;','posted-tiktok':'background:rgba(245,160,182,.2);color:#F5A0B6;'};
-const DONE_STATES=['complete','no-approval','posted-ig','posted-tiktok'];
+const STATUSES=['not-started','in-progress','sent','complete','no-approval','posted-ig','posted-tiktok','did-not-post'];
+const STATUS_LABELS={'not-started':'Not started','in-progress':'In progress','sent':'Sent for approval','complete':'Approved','no-approval':'No approval needed','posted-ig':'✓ Posted to IG','posted-tiktok':'✓ Posted to TikTok','did-not-post':'✗ Did not post'};
+const STATUS_APV_CLS={'not-started':'apv-not','in-progress':'apv-prog','sent':'apv-sent','complete':'apv-done','no-approval':'apv-noapp','posted-ig':'apv-ig','posted-tiktok':'apv-tiktok','did-not-post':'apv-dnp'};
+const STATUS_BADGE={'not-started':'background:rgba(255,255,255,.07);color:rgba(255,255,255,.4);','in-progress':'background:rgba(255,255,140,.12);color:#FFFF8C;','sent':'background:rgba(56,182,255,.15);color:#38B6FF;','complete':'background:rgba(94,232,160,.15);color:#5EE8A0;','no-approval':'background:rgba(255,255,255,.07);color:rgba(255,255,255,.5);','posted-ig':'background:rgba(56,182,255,.2);color:#38B6FF;','posted-tiktok':'background:rgba(245,160,182,.2);color:#F5A0B6;','did-not-post':'background:rgba(255,255,255,.1);color:rgba(255,255,255,.7);'};
+const DONE_STATES=['complete','no-approval','posted-ig','posted-tiktok','did-not-post'];
 const APPROVERS=['Kevin','Emily'];
 
 const SUPABASE_URL='https://dumvttqwtfthtansywnq.supabase.co';
@@ -840,7 +841,8 @@ function today(){const n=new Date();return new Date(n.getFullYear(),n.getMonth()
 function matchesPerson(item){if(person==='All')return true;return item.who&&item.who.toLowerCase().includes(person.toLowerCase());}
 function isTBD(c){return !c||c==='TBD';}
 function isDone(c,item){return DONE_STATES.includes(getStatus(c,item));}
-function isBothApproved(item){return getApproval(city,item,'Kevin')==='approved'&&getApproval(city,item,'Emily')==='approved';}
+// Either approver moves it to complete (changed from both required)
+function isApproved(item){return getApproval(city,item,'Kevin')==='approved'||getApproval(city,item,'Emily')==='approved';}
 
 function approvalDL(item){
   const d=parseDate(item.date);if(!d)return null;
@@ -1093,7 +1095,7 @@ function doApprove(c,itemId,who,val){
   const item=findItemById(c,itemId);
   if(!item)return;
   setApproval(c,item,who,val);
-  if(isBothApproved(item))saveStatus(c,item,'complete');
+  if(isApproved(item))saveStatus(c,item,'complete');
   renderAll();
 }
 
@@ -1192,7 +1194,7 @@ function openPanel(type){
     items=DATA.filter(r=>(isApprover||matchesPerson(r))&&!isTBD(r.content)&&(getStatus(city,r)==='complete'||getStatus(city,r)==='no-approval'));
   } else if(type==='posted'){
     const isApprover=APPROVERS.includes(person);
-    items=DATA.filter(r=>(isApprover||matchesPerson(r))&&!isTBD(r.content)&&(getStatus(city,r)==='posted-ig'||getStatus(city,r)==='posted-tiktok'));
+    items=DATA.filter(r=>(isApprover||matchesPerson(r))&&!isTBD(r.content)&&(getStatus(city,r)==='posted-ig'||getStatus(city,r)==='posted-tiktok'||getStatus(city,r)==='did-not-post'));
   } else if(type==='done'){
     items=DATA.filter(r=>matchesPerson(r)&&isDone(city,r)&&!isTBD(r.content));
   }
@@ -1214,6 +1216,7 @@ function openPanel(type){
       // Posting status buttons — show in posted and approved panels
       const igPosted=st==='posted-ig'||st==='posted-tiktok';
       const ttPosted=st==='posted-tiktok';
+      const dnp=st==='did-not-post';
       const ik=`'${city}','${item._id}'`;
 
       let postingStatus='';
@@ -1224,7 +1227,10 @@ function openPanel(type){
         const ttBtn=ttPosted
           ? `<button onclick="markStatusDirect(${ik},'posted-ig');closePanel();setTimeout(()=>openPanel('${type}'),100);" style="font-size:11px;font-weight:700;padding:4px 12px;border-radius:20px;background:rgba(245,160,182,.2);color:#F5A0B6;border:1px solid #F5A0B6;cursor:pointer;">✓ Posted to TikTok — undo</button>`
           : `<button onclick="markStatusDirect(${ik},'posted-tiktok');closePanel();setTimeout(()=>openPanel('${type}'),100);" style="font-size:11px;font-weight:600;padding:4px 12px;border-radius:20px;background:transparent;color:rgba(245,160,182,.6);border:1px solid rgba(245,160,182,.3);cursor:pointer;">Mark Posted to TikTok</button>`;
-        postingStatus=`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;">${igBtn}${ttBtn}</div>`;
+        const dnpBtn=dnp
+          ? `<button onclick="markStatusDirect(${ik},'complete');closePanel();setTimeout(()=>openPanel('${type}'),100);" style="font-size:11px;font-weight:700;padding:4px 12px;border-radius:20px;background:rgba(255,255,255,.1);color:rgba(255,255,255,.75);border:1px solid rgba(255,255,255,.4);cursor:pointer;">✗ Did not post — undo</button>`
+          : `<button onclick="markStatusDirect(${ik},'did-not-post');closePanel();setTimeout(()=>openPanel('${type}'),100);" style="font-size:11px;font-weight:600;padding:4px 12px;border-radius:20px;background:transparent;color:rgba(255,255,255,.45);border:1px solid rgba(255,255,255,.2);cursor:pointer;">Did not post</button>`;
+        postingStatus=`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;">${igBtn}${ttBtn}${dnpBtn}</div>`;
       }
 
       return `<div class="card" style="margin-bottom:10px;opacity:1;">
@@ -1378,7 +1384,7 @@ function renderAll(){
   const upcomingItems=vis.filter(r=>!isDone(city,r));
   // Approved & Posted: Kevin and Emily see ALL team posts (birds-eye), others see their own
   const approvedFilter=r=>!isTBD(r.content)&&(getStatus(city,r)==='complete'||getStatus(city,r)==='no-approval');
-  const postedFilter=r=>!isTBD(r.content)&&(getStatus(city,r)==='posted-ig'||getStatus(city,r)==='posted-tiktok');
+  const postedFilter=r=>!isTBD(r.content)&&(getStatus(city,r)==='posted-ig'||getStatus(city,r)==='posted-tiktok'||getStatus(city,r)==='did-not-post');
   const isApprover=APPROVERS.includes(person);
   const approvedItems=DATA.filter(r=>isApprover?approvedFilter(r):matchesPerson(r)&&approvedFilter(r));
   const postedItems=DATA.filter(r=>isApprover?postedFilter(r):matchesPerson(r)&&postedFilter(r));
