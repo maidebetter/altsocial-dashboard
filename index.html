@@ -1099,6 +1099,16 @@ function doApprove(c,itemId,who,val){
   renderAll();
 }
 
+// Undo this approver's own approval. Always returns the post to 'sent' so the undoer
+// can re-evaluate from their queue (Approve / Request changes / No approval needed).
+function undoApproval(c,itemId,who){
+  const item=findItemById(c,itemId);
+  if(!item)return;
+  setApproval(c,item,who,'pending');
+  saveStatus(c,item,'sent');
+  renderAll();
+}
+
 function renderApvBtns(c,item,small){
   return renderStatusDropdown(c,item);
 }
@@ -1230,7 +1240,13 @@ function openPanel(type){
         const dnpBtn=dnp
           ? `<button onclick="markStatusDirect(${ik},'complete');closePanel();setTimeout(()=>openPanel('${type}'),100);" style="font-size:11px;font-weight:700;padding:4px 12px;border-radius:20px;background:rgba(255,255,255,.1);color:rgba(255,255,255,.75);border:1px solid rgba(255,255,255,.4);cursor:pointer;">✗ Did not post — undo</button>`
           : `<button onclick="markStatusDirect(${ik},'did-not-post');closePanel();setTimeout(()=>openPanel('${type}'),100);" style="font-size:11px;font-weight:600;padding:4px 12px;border-radius:20px;background:transparent;color:rgba(255,255,255,.45);border:1px solid rgba(255,255,255,.2);cursor:pointer;">Did not post</button>`;
-        postingStatus=`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;">${igBtn}${ttBtn}${dnpBtn}</div>`;
+        // Undo-my-approval: only visible to Kevin/Emily on items they personally approved.
+        // Clicking sends post back to their queue where they can re-approve or request changes.
+        let undoApvBtn='';
+        if(type==='approved'&&APPROVERS.includes(person)&&getApproval(city,item,person)==='approved'){
+          undoApvBtn=`<button onclick="undoApproval('${city}','${item._id}','${person}');closePanel();setTimeout(()=>openPanel('${type}'),100);" style="font-size:11px;font-weight:600;padding:4px 12px;border-radius:20px;background:transparent;color:rgba(245,160,182,.75);border:1px solid rgba(245,160,182,.4);cursor:pointer;">↺ Undo my approval</button>`;
+        }
+        postingStatus=`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;">${igBtn}${ttBtn}${dnpBtn}${undoApvBtn}</div>`;
       }
 
       return `<div class="card" style="margin-bottom:10px;opacity:1;">
