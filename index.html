@@ -1244,7 +1244,7 @@ function openPanel(type){
         // Clicking sends post back to their queue where they can re-approve or request changes.
         let undoApvBtn='';
         if(type==='approved'&&APPROVERS.includes(person)&&getApproval(city,item,person)==='approved'){
-          undoApvBtn=`<button onclick="undoApproval('${city}','${item._id}','${person}');closePanel();setTimeout(()=>openPanel('${type}'),100);" style="font-size:11px;font-weight:600;padding:4px 12px;border-radius:20px;background:transparent;color:rgba(245,160,182,.75);border:1px solid rgba(245,160,182,.4);cursor:pointer;">↺ Undo my approval</button>`;
+          undoApvBtn=`<button onclick="undoApproval('${city}','${item._id}','${person}');closePanel();setTimeout(()=>openPanel('${type}'),100);" style="font-size:11px;font-weight:600;padding:4px 12px;border-radius:20px;background:transparent;color:rgba(94,232,160,.85);border:1px solid rgba(94,232,160,.45);cursor:pointer;">↺ Undo my approval</button>`;
         }
         postingStatus=`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;">${igBtn}${ttBtn}${dnpBtn}${undoApvBtn}</div>`;
       }
