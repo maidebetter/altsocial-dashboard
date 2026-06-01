@@ -1253,7 +1253,7 @@ function openPanel(type){
         <div class="card-title">${item.content}</div>
         <div class="card-meta">${dayLabel(item)} · ${dateLabel(item)} · ${item.who||'—'}</div>
         ${dl&&(type==='due'||type==='remaining')?`<div class="card-deadline ${dl.cls}">${dl.label}</div>`:''}
-        <span class="st-badge" style="${STATUS_BADGE[st]};margin-top:5px;display:inline-block;">${STATUS_LABELS[st]}</span>
+        <div style="margin-top:6px;">${renderStatusDropdown(city,item)}</div>
         ${showChips?fmtApproverChips(item,false):''}
         ${postingStatus}
         ${allAssets.length?`<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;">${allAssets.map((a,i)=>{
@@ -1393,7 +1393,9 @@ function renderAll(){
     const diff=Math.round((dl-t)/(1000*60*60*24));
     return diff<=0&&!isDone(city,r);
   });
-  const sentItems=vis.filter(r=>getStatus(city,r)==='sent');
+  // Awaiting approval: count regardless of date so the metric matches the drill-down panel.
+  // Past-dated 'sent' items are still stuck and need attention.
+  const sentItems=DATA.filter(r=>matchesPerson(r)&&!isTBD(r.content)&&getStatus(city,r)==='sent');
   const upcomingItems=vis.filter(r=>!isDone(city,r));
   // Approved & Posted: Kevin and Emily see ALL team posts (birds-eye), others see their own
   const approvedFilter=r=>!isTBD(r.content)&&(getStatus(city,r)==='complete'||getStatus(city,r)==='no-approval');
