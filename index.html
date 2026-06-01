@@ -842,7 +842,8 @@ function matchesPerson(item){if(person==='All')return true;return item.who&&item
 function isTBD(c){return !c||c==='TBD';}
 function isDone(c,item){return DONE_STATES.includes(getStatus(c,item));}
 // Either approver moves it to complete (changed from both required)
-function isApproved(item){return getApproval(city,item,'Kevin')==='approved'||getApproval(city,item,'Emily')==='approved';}
+// IMPORTANT: takes city explicitly — approval queue is cross-city, so global `city` is wrong here.
+function isApproved(c,item){return getApproval(c,item,'Kevin')==='approved'||getApproval(c,item,'Emily')==='approved';}
 
 function approvalDL(item){
   const d=parseDate(item.date);if(!d)return null;
@@ -1095,7 +1096,7 @@ function doApprove(c,itemId,who,val){
   const item=findItemById(c,itemId);
   if(!item)return;
   setApproval(c,item,who,val);
-  if(isApproved(item))saveStatus(c,item,'complete');
+  if(isApproved(c,item))saveStatus(c,item,'complete');
   renderAll();
 }
 
