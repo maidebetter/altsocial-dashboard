@@ -366,6 +366,7 @@ async function loadFromSupabase(){
     }
   });
   if(!isUserInteracting()){
+    applyContentReconciliation();
     renderAll();
     document.getElementById('save-pill').textContent='Synced ✓';
     showSave();
@@ -383,11 +384,17 @@ function subscribeRealtime(){
   setInterval(async()=>{
     if(isUserInteracting())return;
     await Promise.all([fetchSheetData(), fetchShotList()]);
-    if(!isUserInteracting())renderAll();
+    if(!isUserInteracting()){
+      applyContentReconciliation();
+      renderAll();
+    }
   },60000);
 }
 
-function sk(c,item){return c+'||'+item.date+'||'+item.content;}
+// Use canonical content (set by content reconciliation) when available — protects against
+// records being orphaned when the sheet's content text is edited (typo fixes, "b-roll" prefix, etc.)
+function _effContent(item){return (item&&item._canonicalContent)||(item&&item.content)||'';}
+function sk(c,item){return c+'||'+item.date+'||'+_effContent(item);}
 function getStatus(c,item){return statusCache[sk(c,item)]||'not-started';}
 function saveStatus(c,item,s){
   const key=sk(c,item);
@@ -396,7 +403,7 @@ function saveStatus(c,item,s){
   sbUpsert('statuses',{item_key:key,status:s,updated_at:new Date().toISOString()});
 }
 
-function apvKey(c,item,who){return'apv||'+c+'||'+item.date+'||'+item.content+'||'+who;}
+function apvKey(c,item,who){return'apv||'+c+'||'+item.date+'||'+_effContent(item)+'||'+who;}
 function getApproval(c,item,who){return approvalCache[apvKey(c,item,who)]||'pending';}
 function setApproval(c,item,who,val){
   const key=apvKey(c,item,who);
@@ -405,7 +412,7 @@ function setApproval(c,item,who,val){
   sbUpsert('statuses',{item_key:key,status:val,updated_at:new Date().toISOString()});
 }
 
-function assetsKey(c,item){return c+'||'+item.date+'||'+item.content;}
+function assetsKey(c,item){return c+'||'+item.date+'||'+_effContent(item);}
 function getAssets(c,item){return assetsCache[assetsKey(c,item)]||[];}
 function saveAssets(c,item,assets){
   const key=assetsKey(c,item);
@@ -419,7 +426,7 @@ async function addAssetToSupabase(c,item,asset){
 
 // Feedback/change request storage
 const feedbackCache={};
-function feedbackKey(c,item){return'feedback||'+c+'||'+item.date+'||'+item.content;}
+function feedbackKey(c,item){return'feedback||'+c+'||'+item.date+'||'+_effContent(item);}
 // Returns array of feedback notes, most recent first
 function getFeedback(c,item){return feedbackCache[feedbackKey(c,item)]||[];}
 function saveFeedback(c,item,note,who){
@@ -435,6 +442,69 @@ function clearFeedback(c,item){
   const key=feedbackKey(c,item);
   delete feedbackCache[key];
   sbUpsert('statuses',{item_key:key,status:'',updated_at:new Date().toISOString()});
+}
+
+// ── CONTENT IDENTITY RECONCILIATION ─────────────────────────────────────
+// Records (status / approval / asset / feedback) are keyed by exact content text.
+// When the team edits a post's content in the sheet (typo fix, "b-roll" prefix, rewording),
+// the old records become orphans and the post shows up as fresh. To prevent that, on every
+// data refresh we look for orphan records whose content is "close enough" to a current item
+// and route that item's lookups through the matched (canonical) content.
+
+function _tokenize(s){return (s||'').toLowerCase().replace(/[^\w\s]/g,' ').split(/\s+/).filter(t=>t.length>=2);}
+function _contentSimilarity(a,b){
+  if(a===b)return 1;
+  const al=(a||'').toLowerCase(),bl=(b||'').toLowerCase();
+  const short=Math.min(al.length,bl.length);
+  // Long-enough substring containment scores high (handles prefix/suffix additions).
+  if(short>=8&&(al.includes(bl)||bl.includes(al)))return 0.95;
+  // Token-set Jaccard handles word reordering / minor edits.
+  const ta=new Set(_tokenize(a)),tb=new Set(_tokenize(b));
+  if(!ta.size||!tb.size)return 0;
+  let inter=0;
+  for(const t of ta)if(tb.has(t))inter++;
+  return inter/(ta.size+tb.size-inter);
+}
+function _candidateContentsFor(c,date){
+  const out=new Set();
+  const prefAS=c+'||'+date+'||',prefFB='feedback||'+c+'||'+date+'||',prefAP='apv||'+c+'||'+date+'||';
+  const scan=(cache)=>{
+    for(const k in cache){
+      if(k.startsWith(prefAS))out.add(k.substring(prefAS.length));
+      else if(k.startsWith(prefFB))out.add(k.substring(prefFB.length));
+      else if(k.startsWith(prefAP)){
+        const rest=k.substring(prefAP.length);
+        const i=rest.lastIndexOf('||');
+        if(i>0)out.add(rest.substring(0,i));
+      }
+    }
+  };
+  scan(statusCache);scan(assetsCache);scan(feedbackCache);scan(approvalCache);
+  return out;
+}
+function _resolveCanonicalContent(c,item){
+  // If item already has any direct cache hit, leave canonical unset.
+  // (Use raw item.content for the direct check — we want to know if THIS exact content has records.)
+  const raw=item.content;
+  const directBase=c+'||'+item.date+'||'+raw;
+  if(statusCache[directBase]||assetsCache[directBase])return;
+  if(feedbackCache['feedback||'+directBase])return;
+  for(const who of APPROVERS){if(approvalCache['apv||'+directBase+'||'+who])return;}
+  // No direct hit — search for similar content with same city + date.
+  const candidates=_candidateContentsFor(c,item.date);
+  let bestContent=null,bestScore=0;
+  for(const cand of candidates){
+    if(cand===raw)continue;
+    const s=_contentSimilarity(raw,cand);
+    if(s>bestScore){bestScore=s;bestContent=cand;}
+  }
+  if(bestContent&&bestScore>=0.7)item._canonicalContent=bestContent;
+}
+function applyContentReconciliation(){
+  [['orlando',ORLANDO],['tampa',TAMPA],['tiktok',TIKTOK]].forEach(([c,arr])=>{
+    if(!arr)return;
+    arr.forEach(item=>_resolveCanonicalContent(c,item));
+  });
 }
 
 function showSave(){const p=document.getElementById('save-pill');p.classList.add('show');clearTimeout(window._st);window._st=setTimeout(()=>p.classList.remove('show'),2000);}
