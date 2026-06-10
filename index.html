@@ -391,10 +391,11 @@ function subscribeRealtime(){
   },60000);
 }
 
-// Use canonical content (set by content reconciliation) when available — protects against
-// records being orphaned when the sheet's content text is edited (typo fixes, "b-roll" prefix, etc.)
+// Use canonical (date, content) pair set by identity reconciliation when available.
+// Protects records when the sheet's content text is edited OR the post is moved to a new date.
+function _effDate(item){return (item&&item._canonicalDate)||(item&&item.date)||'';}
 function _effContent(item){return (item&&item._canonicalContent)||(item&&item.content)||'';}
-function sk(c,item){return c+'||'+item.date+'||'+_effContent(item);}
+function sk(c,item){return c+'||'+_effDate(item)+'||'+_effContent(item);}
 function getStatus(c,item){return statusCache[sk(c,item)]||'not-started';}
 function saveStatus(c,item,s){
   const key=sk(c,item);
@@ -403,7 +404,7 @@ function saveStatus(c,item,s){
   sbUpsert('statuses',{item_key:key,status:s,updated_at:new Date().toISOString()});
 }
 
-function apvKey(c,item,who){return'apv||'+c+'||'+item.date+'||'+_effContent(item)+'||'+who;}
+function apvKey(c,item,who){return'apv||'+c+'||'+_effDate(item)+'||'+_effContent(item)+'||'+who;}
 function getApproval(c,item,who){return approvalCache[apvKey(c,item,who)]||'pending';}
 function setApproval(c,item,who,val){
   const key=apvKey(c,item,who);
@@ -412,7 +413,7 @@ function setApproval(c,item,who,val){
   sbUpsert('statuses',{item_key:key,status:val,updated_at:new Date().toISOString()});
 }
 
-function assetsKey(c,item){return c+'||'+item.date+'||'+_effContent(item);}
+function assetsKey(c,item){return c+'||'+_effDate(item)+'||'+_effContent(item);}
 function getAssets(c,item){return assetsCache[assetsKey(c,item)]||[];}
 function saveAssets(c,item,assets){
   const key=assetsKey(c,item);
@@ -426,7 +427,7 @@ async function addAssetToSupabase(c,item,asset){
 
 // Feedback/change request storage
 const feedbackCache={};
-function feedbackKey(c,item){return'feedback||'+c+'||'+item.date+'||'+_effContent(item);}
+function feedbackKey(c,item){return'feedback||'+c+'||'+_effDate(item)+'||'+_effContent(item);}
 // Returns array of feedback notes, most recent first
 function getFeedback(c,item){return feedbackCache[feedbackKey(c,item)]||[];}
 function saveFeedback(c,item,note,who){
@@ -444,12 +445,13 @@ function clearFeedback(c,item){
   sbUpsert('statuses',{item_key:key,status:'',updated_at:new Date().toISOString()});
 }
 
-// ── CONTENT IDENTITY RECONCILIATION ─────────────────────────────────────
-// Records (status / approval / asset / feedback) are keyed by exact content text.
-// When the team edits a post's content in the sheet (typo fix, "b-roll" prefix, rewording),
-// the old records become orphans and the post shows up as fresh. To prevent that, on every
-// data refresh we look for orphan records whose content is "close enough" to a current item
-// and route that item's lookups through the matched (canonical) content.
+// ── IDENTITY RECONCILIATION ─────────────────────────────────────────────
+// Records (status / approval / asset / feedback) are keyed by (city, date, content).
+// When the team edits content text OR moves a post to a different date in the sheet,
+// the old records become orphans and the post shows up as fresh. To prevent that, on
+// every data refresh we look for orphan records that match each current item — either
+// by exact content under a nearby date, or by close content text under the same date —
+// and route the item's lookups through the matched (canonical) key.
 
 function _tokenize(s){return (s||'').toLowerCase().replace(/[^\w\s]/g,' ').split(/\s+/).filter(t=>t.length>=2);}
 function _contentSimilarity(a,b){
@@ -465,45 +467,71 @@ function _contentSimilarity(a,b){
   for(const t of ta)if(tb.has(t))inter++;
   return inter/(ta.size+tb.size-inter);
 }
-function _candidateContentsFor(c,date){
-  const out=new Set();
-  const prefAS=c+'||'+date+'||',prefFB='feedback||'+c+'||'+date+'||',prefAP='apv||'+c+'||'+date+'||';
+// Extract every (date, content) pair we've seen across all caches for a given city.
+function _candidateRecords(c){
+  const seen=new Set(),out=[];
+  const add=(date,content)=>{const k=date+'||'+content;if(!seen.has(k)){seen.add(k);out.push({date,content});}};
+  const prefAS=c+'||',prefFB='feedback||'+c+'||',prefAP='apv||'+c+'||';
   const scan=(cache)=>{
     for(const k in cache){
-      if(k.startsWith(prefAS))out.add(k.substring(prefAS.length));
-      else if(k.startsWith(prefFB))out.add(k.substring(prefFB.length));
-      else if(k.startsWith(prefAP)){
-        const rest=k.substring(prefAP.length);
-        const i=rest.lastIndexOf('||');
-        if(i>0)out.add(rest.substring(0,i));
-      }
+      let rest,isApv=false;
+      if(k.startsWith(prefAP)){rest=k.substring(prefAP.length);isApv=true;}
+      else if(k.startsWith(prefFB)){rest=k.substring(prefFB.length);}
+      else if(k.startsWith(prefAS)&&!k.startsWith('feedback||')&&!k.startsWith('apv||')){rest=k.substring(prefAS.length);}
+      else continue;
+      const i=rest.indexOf('||');
+      if(i<0)continue;
+      const date=rest.substring(0,i);
+      let content=rest.substring(i+2);
+      if(isApv){const j=content.lastIndexOf('||');if(j<0)continue;content=content.substring(0,j);}
+      add(date,content);
     }
   };
   scan(statusCache);scan(assetsCache);scan(feedbackCache);scan(approvalCache);
   return out;
 }
-function _resolveCanonicalContent(c,item){
-  // If item already has any direct cache hit, leave canonical unset.
-  // (Use raw item.content for the direct check — we want to know if THIS exact content has records.)
-  const raw=item.content;
-  const directBase=c+'||'+item.date+'||'+raw;
+function _resolveCanonicalKey(c,item){
+  // Start fresh each pass so we always re-evaluate against the current cache.
+  delete item._canonicalDate;
+  delete item._canonicalContent;
+  // Direct hit on the raw current key — nothing to reconcile.
+  const directBase=c+'||'+item.date+'||'+item.content;
   if(statusCache[directBase]||assetsCache[directBase])return;
   if(feedbackCache['feedback||'+directBase])return;
   for(const who of APPROVERS){if(approvalCache['apv||'+directBase+'||'+who])return;}
-  // No direct hit — search for similar content with same city + date.
-  const candidates=_candidateContentsFor(c,item.date);
-  let bestContent=null,bestScore=0;
-  for(const cand of candidates){
-    if(cand===raw)continue;
-    const s=_contentSimilarity(raw,cand);
-    if(s>bestScore){bestScore=s;bestContent=cand;}
+
+  const records=_candidateRecords(c);
+  const itemDate=parseDate(item.date);
+
+  // Type 1 — exact content match under a nearby date (handles Emily moving posts around).
+  // Cap drift at 30 days so a recurring post title can't grab an ancient record.
+  if(itemDate){
+    let dateMatch=null;
+    for(const r of records){
+      if(r.content!==item.content)continue;
+      if(r.date===item.date)continue;
+      const rd=parseDate(r.date);
+      if(!rd)continue;
+      const days=Math.abs((rd-itemDate)/(1000*60*60*24));
+      if(days>30)continue;
+      if(!dateMatch||days<dateMatch.days)dateMatch={date:r.date,content:r.content,days};
+    }
+    if(dateMatch){item._canonicalDate=dateMatch.date;item._canonicalContent=dateMatch.content;return;}
   }
-  if(bestContent&&bestScore>=0.7)item._canonicalContent=bestContent;
+
+  // Type 2 — same date, close content (handles "b-roll …" prefix, typo fixes, etc.).
+  let contentMatch=null;
+  for(const r of records){
+    if(r.date!==item.date||r.content===item.content)continue;
+    const s=_contentSimilarity(item.content,r.content);
+    if(s>=0.7&&(!contentMatch||s>contentMatch.score))contentMatch={date:r.date,content:r.content,score:s};
+  }
+  if(contentMatch){item._canonicalDate=contentMatch.date;item._canonicalContent=contentMatch.content;}
 }
 function applyContentReconciliation(){
   [['orlando',ORLANDO],['tampa',TAMPA],['tiktok',TIKTOK]].forEach(([c,arr])=>{
     if(!arr)return;
-    arr.forEach(item=>_resolveCanonicalContent(c,item));
+    arr.forEach(item=>_resolveCanonicalKey(c,item));
   });
 }
 
