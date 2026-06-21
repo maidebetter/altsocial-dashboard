@@ -45,6 +45,8 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--black);color:
 .p-emily.on{background:var(--yellow);}
 .p-kevin.on{background:#C084FC;}
 .p-amanda.on{background:#FB923C;}
+.p-ani.on{background:#2DD4BF;}
+.p-jaylean.on{background:#FBBF24;}
 .approval-queue{background:var(--blue-dim2);border:1px solid rgba(56,182,255,.2);border-radius:var(--rl);padding:1rem 1.1rem;margin-bottom:1.25rem;display:none;}
 .approval-queue.show{display:block;}
 /* Change request modal */
@@ -575,8 +577,11 @@ function submitCR(){
 
 
 
-const PEOPLE=['All','Cory','Lindy','Breno','Emily','Kevin','Amanda'];
-const PERSON_CLS={'All':'p-all','Cory':'p-cory','Lindy':'p-lindy','Breno':'p-breno','Emily':'p-emily','Kevin':'p-kevin','Amanda':'p-amanda'};
+const PEOPLE=['All','Cory','Lindy','Breno','Emily','Kevin','Amanda','Ani','Jaylean'];
+const PERSON_CLS={'All':'p-all','Cory':'p-cory','Lindy':'p-lindy','Breno':'p-breno','Emily':'p-emily','Kevin':'p-kevin','Amanda':'p-amanda','Ani':'p-ani','Jaylean':'p-jaylean'};
+// Names other than 'All' that map a row's "Who" column to a filterable owner.
+// If a row's Who doesn't match any of these, the row falls under Cory's tab by default.
+const KNOWN_OWNERS=PEOPLE.filter(p=>p!=='All');
 let city='orlando',person='All',filt='all';
 const assetTypeState={};
 
@@ -593,7 +598,7 @@ let SHOT_LIST_INSPO=[];
 
 async function fetchShotList(){
   try{
-    const SHOT_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=2100586081&single=true&output=csv';
+    const SHOT_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=275204748&single=true&output=csv';
     const resp=await fetch(SHOT_URL);
     if(!resp.ok)throw new Error('shot list fetch failed');
     const csv=await resp.text();
@@ -664,7 +669,7 @@ async function fetchSheetData(){
     document.getElementById('save-pill').textContent='Loading...';
     document.getElementById('save-pill').style.opacity='1';
 
-    const ORL_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=1533501021&single=true&output=csv';
+    const ORL_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=117867419&single=true&output=csv';
     // Tampa — new cycle tab (6/6 – 7/10)
     const TPA_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=1561143236&single=true&output=csv';
     // TikTok — Lindy's tab in the Orlando workbook
@@ -755,10 +760,23 @@ function parseCalendarCSV(csv){
     const rec=reconcileDate(date,day);
     const item={date:rec.date,day:rec.day,content,who,links};
     if(rec.originalDate)item.originalDate=rec.originalDate;
+    item._owners=_computeOwners(who);
     item._id=stableItemId(item);
     items.push(item);
   }
   return items;
+}
+
+// Owner detection — if no known person name appears in the row's "Who" cell,
+// the row falls under Cory's tab by default (so e.g. "Gabby's man" shows up for Cory).
+function _computeOwners(whoStr){
+  const w=(whoStr||'').toLowerCase();
+  const owners=new Set();
+  for(const p of KNOWN_OWNERS){
+    if(w.includes(p.toLowerCase()))owners.add(p);
+  }
+  if(owners.size===0)owners.add('Cory');
+  return owners;
 }
 
 // TikTok tab has a different layout: date | day | status | content | stats | sponsor | followers
@@ -787,6 +805,7 @@ function parseTikTokCSV(csv){
     const rec=reconcileDate(date,day);
     const item={date:rec.date,day:rec.day,content,who:'Lindy',links:[]};
     if(rec.originalDate)item.originalDate=rec.originalDate;
+    item._owners=new Set(['Lindy']);
     item._id=stableItemId(item);
     items.push(item);
   }
@@ -799,6 +818,7 @@ function applyDayNormalization(arr){
     const out={...it,date:rec.date,day:rec.day};
     if(rec.originalDate)out.originalDate=rec.originalDate;
     else delete out.originalDate;
+    out._owners=_computeOwners(out.who);
     out._id=stableItemId(out);
     return out;
   });
@@ -941,7 +961,12 @@ function findItemById(c,id){
 }
 
 function today(){const n=new Date();return new Date(n.getFullYear(),n.getMonth(),n.getDate());}
-function matchesPerson(item){if(person==='All')return true;return item.who&&item.who.toLowerCase().includes(person.toLowerCase());}
+function matchesPerson(item){
+  if(person==='All')return true;
+  // Prefer the precomputed _owners set (handles default-to-Cory for unknown "who" values).
+  if(item&&item._owners)return item._owners.has(person);
+  return item.who&&item.who.toLowerCase().includes(person.toLowerCase());
+}
 function isTBD(c){return !c||c==='TBD';}
 function isDone(c,item){return DONE_STATES.includes(getStatus(c,item));}
 // Either approver moves it to complete (changed from both required)
@@ -1419,10 +1444,10 @@ function renderCal(){
     return true;
   });
   const weeks=city==='orlando'?[
-    {l:'Week 1',s:new Date(2026,4,23),e:new Date(2026,4,30)},
-    {l:'Week 2',s:new Date(2026,4,31),e:new Date(2026,5,6)},
-    {l:'Week 3',s:new Date(2026,5,7),e:new Date(2026,5,13)},
-    {l:'Event Week',s:new Date(2026,5,14),e:new Date(2026,5,20)},
+    {l:'Week 1',s:new Date(2026,5,20),e:new Date(2026,5,27)},
+    {l:'Week 2',s:new Date(2026,5,28),e:new Date(2026,6,4)},
+    {l:'Week 3',s:new Date(2026,6,5),e:new Date(2026,6,11)},
+    {l:'Event Week',s:new Date(2026,6,12),e:new Date(2026,6,18)},
   ]:city==='tampa'?[
     {l:'Week 1',s:new Date(2026,5,6),e:new Date(2026,5,13)},
     {l:'Week 2',s:new Date(2026,5,14),e:new Date(2026,5,20)},
