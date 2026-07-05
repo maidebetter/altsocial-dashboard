@@ -548,31 +548,28 @@ function _resolveCanonicalKey(c,item){
   const itemDate=parseDate(item.date);
 
   // Unified scoring: handles pure date moves, pure content edits, OR both at once.
-  // Cap date drift more strictly when content match is fuzzy — protects recurring post titles
-  // from picking up an unrelated old record.
-  //   exact content (cs == 1):   drift up to 30 days
-  //   close content (cs >= 0.7): drift up to 14 days
-  //   same date:                 any content similarity >= 0.7 is fair game
+  // Loosened per Cory 2026-07-05: 30-day drift cap regardless of content similarity,
+  // 0.55 content similarity floor, 0.42 combined acceptance threshold — favors keeping
+  // history stitched across schedule reshuffles even when titles get edited in the same pass.
   let best=null;
   for(const r of records){
     if(r.date===item.date&&r.content===item.content)continue;
     const cs=_contentSimilarity(item.content,r.content);
-    if(cs<0.7)continue;
+    if(cs<0.55)continue;
     let days=0;
     if(r.date!==item.date){
       if(!itemDate)continue;
       const rd=parseDate(r.date);
       if(!rd)continue;
       days=Math.abs((rd-itemDate)/(1000*60*60*24));
-      const cap=cs>=0.999?30:14;
-      if(days>cap)continue;
+      if(days>30)continue;
     }
     // Combined score: content match weighted more than date proximity.
     const dateScore=Math.max(0,1-days/30);
     const combined=cs*(0.6+0.4*dateScore);
     if(!best||combined>best.score)best={date:r.date,content:r.content,score:combined};
   }
-  if(best&&best.score>=0.55){
+  if(best&&best.score>=0.42){
     item._canonicalDate=best.date;
     item._canonicalContent=best.content;
   }
