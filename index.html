@@ -633,17 +633,28 @@ const SHEET_IDS={
 
 // Fallback static data kept as backup
 let ORLANDO=[], TAMPA=[], TIKTOK=[], TAMPA_SHOTS=[];
+// Per-city shot list caches — the dashboard uses whichever matches the current tab.
+let SHOT_LIST_ORL=[], SHOT_LIST_TPA=[];
+// Legacy alias — some downstream code may still reference SHOT_LIST_INSPO.
 let SHOT_LIST_INSPO=[];
 
 async function fetchShotList(){
-  try{
-    const SHOT_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=275204748&single=true&output=csv';
-    const resp=await fetch(SHOT_URL);
-    if(!resp.ok)throw new Error('shot list fetch failed');
-    const csv=await resp.text();
-    const items=parseShotListCSV(csv);
-    if(items.length>0){SHOT_LIST_INSPO=items;console.log(`✓ Shot list: ${items.length} concepts with inspo links`);}
-  }catch(e){console.log('Shot list fetch error:',e.message);}
+  const ORL_SHOT_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=275204748&single=true&output=csv';
+  const TPA_SHOT_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=1553024323&single=true&output=csv';
+  async function fetchOne(url,label){
+    try{
+      const resp=await fetch(url);
+      if(!resp.ok)throw new Error(label+' shot list fetch failed');
+      const items=parseShotListCSV(await resp.text());
+      console.log(`✓ ${label} shot list: ${items.length} concepts`);
+      return items;
+    }catch(e){console.log(label+' shot list fetch error:',e.message);return[];}
+  }
+  const [orl,tpa]=await Promise.all([fetchOne(ORL_SHOT_URL,'Orlando'),fetchOne(TPA_SHOT_URL,'Tampa')]);
+  if(orl.length)SHOT_LIST_ORL=orl;
+  if(tpa.length)SHOT_LIST_TPA=tpa;
+  // Legacy: point the shared array at whatever matches the current tab.
+  SHOT_LIST_INSPO=city==='tampa'?SHOT_LIST_TPA:SHOT_LIST_ORL;
 }
 
 function parseShotListCSV(csv){
@@ -674,12 +685,14 @@ function parseShotListCSV(csv){
 }
 
 function getInspoLinks(content){
-  if(!content||!SHOT_LIST_INSPO.length)return[];
+  // Pick the shot list matching the current tab (Tampa list on Tampa, Orlando otherwise).
+  const list=city==='tampa'?SHOT_LIST_TPA:SHOT_LIST_ORL;
+  if(!content||!list.length)return[];
   const stopWords=new Set(['the','a','an','and','or','to','in','of','for','with','on','at','is','it','this','that','we','i','my','our','you','your','its','are','was','be','have','has','do','did','not','but','so','if','as','by','up','out','can','will','just','now','all','when','what','how','who','get','got','need','want','like','see','know','think','go','come','make','take','give','show','tell','let','put','use','say','new','more','some','any','from','they','them','their','there','then','than','would','could','should']);
   const calWords=content.toLowerCase().split(/\s+/).filter(w=>w.length>2&&!stopWords.has(w));
   if(!calWords.length)return[];
   let bestMatch=null;let bestScore=0;
-  SHOT_LIST_INSPO.forEach(({concept,links})=>{
+  list.forEach(({concept,links})=>{
     const shotWords=concept.split(/\s+/).filter(w=>w.length>2&&!stopWords.has(w));
     let score=0;
     calWords.forEach(cw=>{shotWords.forEach(sw=>{if(sw===cw)score+=2;else if(sw.includes(cw)||cw.includes(sw))score+=1;});});
@@ -709,8 +722,8 @@ async function fetchSheetData(){
     document.getElementById('save-pill').style.opacity='1';
 
     const ORL_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=117867419&single=true&output=csv';
-    // Tampa — new cycle tab (6/6 – 7/10)
-    const TPA_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=1561143236&single=true&output=csv';
+    // Tampa — new cycle tab (7/11 – 8/8)
+    const TPA_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=1007105578&single=true&output=csv';
     // TikTok — Lindy's tab in the Orlando workbook
     const TT_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=2092437778&single=true&output=csv';
 
@@ -1562,11 +1575,10 @@ function renderCal(){
     {l:'Week 3',s:new Date(2026,6,5),e:new Date(2026,6,11)},
     {l:'Event Week',s:new Date(2026,6,12),e:new Date(2026,6,18)},
   ]:city==='tampa'?[
-    {l:'Week 1',s:new Date(2026,5,6),e:new Date(2026,5,13)},
-    {l:'Week 2',s:new Date(2026,5,14),e:new Date(2026,5,20)},
-    {l:'Week 3',s:new Date(2026,5,21),e:new Date(2026,5,27)},
-    {l:'Week 4',s:new Date(2026,5,28),e:new Date(2026,6,4)},
-    {l:'Week 5',s:new Date(2026,6,5),e:new Date(2026,6,11)},
+    {l:'Week 1',s:new Date(2026,6,11),e:new Date(2026,6,18)},
+    {l:'Week 2',s:new Date(2026,6,19),e:new Date(2026,6,25)},
+    {l:'Week 3',s:new Date(2026,6,26),e:new Date(2026,7,1)},
+    {l:'Event Week',s:new Date(2026,7,2),e:new Date(2026,7,8)},
   ]:[
     {l:'Dec 2025',s:new Date(2025,11,1),e:new Date(2025,11,31)},
     {l:'Jan 2026',s:new Date(2026,0,1),e:new Date(2026,0,31)},
