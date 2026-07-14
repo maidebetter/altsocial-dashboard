@@ -374,35 +374,43 @@ function isUserInteracting(){
 }
 
 async function loadFromSupabase(){
-  // Order by id.asc so if the table has duplicate rows for the same item_key
-  // (missing unique constraint upstream), the newest row is processed last
-  // and wins the cache overwrite. Prevents stale statuses from resurrecting.
+  // Supabase caps every fetch at 1000 rows. Use id.desc so the NEWEST rows are always
+  // included — otherwise recent writes get cut off once the table grows past 1000.
+  // Combined with first-write-wins in the cache population below, the freshest row
+  // per key always wins.
   const [statuses,assets]=await Promise.all([
-    sbGet('statuses','item_key=neq.null&order=id.asc'),
-    sbGet('assets','item_key=neq.null&order=id.asc')
+    sbGet('statuses','item_key=neq.null&order=id.desc'),
+    sbGet('assets','item_key=neq.null&order=id.desc')
   ]);
-  // Populate caches
-  statuses.forEach(r=>{if(r.item_key)statusCache[r.item_key]=r.status;});
-  // Group assets by item_key — skip any URLs that were recently deleted
+  // Reset caches so rows deleted from Supabase (via self-cleaning writes) don't linger.
+  for(const k in statusCache)delete statusCache[k];
+  for(const k in approvalCache)delete approvalCache[k];
+  for(const k in feedbackCache)delete feedbackCache[k];
+  for(const k in captionCache)delete captionCache[k];
+  for(const k in assetsCache)delete assetsCache[k];
+  // Populate — first row wins (newest id first, thanks to order=id.desc).
+  statuses.forEach(r=>{
+    if(!r.item_key)return;
+    const key=r.item_key;
+    if(key.startsWith('apv||')){
+      if(!(key in approvalCache))approvalCache[key]=r.status;
+    }else if(key.startsWith('feedback||')){
+      if(key in feedbackCache||!r.status)return;
+      try{const parsed=JSON.parse(r.status);feedbackCache[key]=Array.isArray(parsed)?parsed:[parsed];}catch(e){}
+    }else if(key.startsWith('caption||')){
+      if(key in captionCache||!r.status)return;
+      try{captionCache[key]=JSON.parse(r.status);}catch(e){}
+    }else{
+      if(!(key in statusCache))statusCache[key]=r.status;
+    }
+  });
+  // Assets — dedupe by URL, keep first (newest) match per (item_key, url).
   assets.forEach(r=>{
     if(!r.item_key)return;
-    if(deletedAssetUrls.has(r.url))return; // skip deleted assets
+    if(deletedAssetUrls.has(r.url))return;
     if(!assetsCache[r.item_key])assetsCache[r.item_key]=[];
     if(!assetsCache[r.item_key].find(a=>a.url===r.url)){
       assetsCache[r.item_key].push({url:r.url,label:r.label,type:r.type,id:r.id});
-    }
-  });
-  // Load approvals, feedback, and captions from statuses table
-  statuses.forEach(r=>{
-    if(r.item_key&&r.item_key.startsWith('apv||'))approvalCache[r.item_key]=r.status;
-    if(r.item_key&&r.item_key.startsWith('feedback||')&&r.status){
-      try{
-        const parsed=JSON.parse(r.status);
-        feedbackCache[r.item_key]=Array.isArray(parsed)?parsed:[parsed];
-      }catch(e){}
-    }
-    if(r.item_key&&r.item_key.startsWith('caption||')&&r.status){
-      try{captionCache[r.item_key]=JSON.parse(r.status);}catch(e){}
     }
   });
   if(!isUserInteracting()){
