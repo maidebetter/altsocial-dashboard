@@ -322,9 +322,27 @@ async function sbGet(table,filter){
   }catch(e){return[];}
 }
 
-async function sbUpsert(table,data){
+// Self-cleaning upsert: INSERT the new row, then DELETE any older rows sharing the same
+// conceptual key. Guarantees the table stays deduped even without a server-side unique
+// constraint. keyCols defaults to ['item_key'] (correct for statuses/apv/feedback/caption);
+// pass ['item_key','url'] for the assets table where multiple assets per post are legit.
+async function sbUpsert(table,data,keyCols){
+  keyCols=keyCols||['item_key'];
   try{
-    await fetch(`${SUPABASE_URL}/rest/v1/${table}`,{method:'POST',headers:{...SB_HEADERS,'Prefer':'resolution=merge-duplicates'},body:JSON.stringify(data)});
+    const res=await fetch(`${SUPABASE_URL}/rest/v1/${table}`,{
+      method:'POST',
+      headers:{...SB_HEADERS,'Prefer':'return=representation'},
+      body:JSON.stringify(data)
+    });
+    if(!res.ok)return;
+    const inserted=await res.json();
+    const newId=inserted&&inserted[0]&&inserted[0].id;
+    if(newId==null)return;
+    const filter=keyCols.map(k=>`${k}=eq.${encodeURIComponent(data[k])}`).join('&');
+    await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}&id=neq.${newId}`,{
+      method:'DELETE',
+      headers:SB_HEADERS
+    });
   }catch(e){console.log('sync error',e);}
 }
 
@@ -356,9 +374,12 @@ function isUserInteracting(){
 }
 
 async function loadFromSupabase(){
+  // Order by id.asc so if the table has duplicate rows for the same item_key
+  // (missing unique constraint upstream), the newest row is processed last
+  // and wins the cache overwrite. Prevents stale statuses from resurrecting.
   const [statuses,assets]=await Promise.all([
-    sbGet('statuses','item_key=neq.null'),
-    sbGet('assets','item_key=neq.null')
+    sbGet('statuses','item_key=neq.null&order=id.asc'),
+    sbGet('assets','item_key=neq.null&order=id.asc')
   ]);
   // Populate caches
   statuses.forEach(r=>{if(r.item_key)statusCache[r.item_key]=r.status;});
@@ -441,7 +462,7 @@ function saveAssets(c,item,assets){
 }
 
 async function addAssetToSupabase(c,item,asset){
-  await sbUpsert('assets',{item_key:assetsKey(c,item),url:asset.url,label:asset.label,type:asset.type});
+  await sbUpsert('assets',{item_key:assetsKey(c,item),url:asset.url,label:asset.label,type:asset.type},['item_key','url']);
 }
 
 // Feedback/change request storage
