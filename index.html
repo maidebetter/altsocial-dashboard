@@ -668,7 +668,7 @@ let SHOT_LIST_ORL=[], SHOT_LIST_TPA=[];
 let SHOT_LIST_INSPO=[];
 
 async function fetchShotList(){
-  const ORL_SHOT_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=275204748&single=true&output=csv';
+  const ORL_SHOT_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=1453789996&single=true&output=csv';
   const TPA_SHOT_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=1553024323&single=true&output=csv';
   async function fetchOne(url,label){
     try{
@@ -750,7 +750,7 @@ async function fetchSheetData(){
     document.getElementById('save-pill').textContent='Loading...';
     document.getElementById('save-pill').style.opacity='1';
 
-    const ORL_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=117867419&single=true&output=csv';
+    const ORL_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=1495934371&single=true&output=csv';
     // Tampa — new cycle tab (7/11 – 8/8)
     const TPA_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=1007105578&single=true&output=csv';
     // TikTok — Lindy's tab in the Orlando workbook
@@ -1599,10 +1599,10 @@ function renderCal(){
     return true;
   });
   const weeks=city==='orlando'?[
-    {l:'Week 1',s:new Date(2026,5,20),e:new Date(2026,5,27)},
-    {l:'Week 2',s:new Date(2026,5,28),e:new Date(2026,6,4)},
-    {l:'Week 3',s:new Date(2026,6,5),e:new Date(2026,6,11)},
-    {l:'Event Week',s:new Date(2026,6,12),e:new Date(2026,6,18)},
+    {l:'Week 1',s:new Date(2026,6,18),e:new Date(2026,6,25)},
+    {l:'Week 2',s:new Date(2026,6,26),e:new Date(2026,7,1)},
+    {l:'Week 3',s:new Date(2026,7,2),e:new Date(2026,7,8)},
+    {l:'Event Week',s:new Date(2026,7,9),e:new Date(2026,7,15)},
   ]:city==='tampa'?[
     {l:'Week 1',s:new Date(2026,6,11),e:new Date(2026,6,18)},
     {l:'Week 2',s:new Date(2026,6,19),e:new Date(2026,6,25)},
