@@ -669,7 +669,7 @@ let SHOT_LIST_INSPO=[];
 
 async function fetchShotList(){
   const ORL_SHOT_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=1453789996&single=true&output=csv';
-  const TPA_SHOT_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=1553024323&single=true&output=csv';
+  const TPA_SHOT_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=1924270414&single=true&output=csv';
   async function fetchOne(url,label){
     try{
       const resp=await fetch(url);
@@ -751,8 +751,8 @@ async function fetchSheetData(){
     document.getElementById('save-pill').style.opacity='1';
 
     const ORL_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=1495934371&single=true&output=csv';
-    // Tampa — new cycle tab (7/11 – 8/8)
-    const TPA_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=1007105578&single=true&output=csv';
+    // Tampa — new cycle tab (8/10 – 9/5)
+    const TPA_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=2124149385&single=true&output=csv';
     // TikTok — Lindy's tab in the Orlando workbook
     const TT_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=2092437778&single=true&output=csv';
 
@@ -1604,10 +1604,10 @@ function renderCal(){
     {l:'Week 3',s:new Date(2026,7,2),e:new Date(2026,7,8)},
     {l:'Event Week',s:new Date(2026,7,9),e:new Date(2026,7,15)},
   ]:city==='tampa'?[
-    {l:'Week 1',s:new Date(2026,6,11),e:new Date(2026,6,18)},
-    {l:'Week 2',s:new Date(2026,6,19),e:new Date(2026,6,25)},
-    {l:'Week 3',s:new Date(2026,6,26),e:new Date(2026,7,1)},
-    {l:'Event Week',s:new Date(2026,7,2),e:new Date(2026,7,8)},
+    {l:'Week 1',s:new Date(2026,7,10),e:new Date(2026,7,15)},
+    {l:'Week 2',s:new Date(2026,7,16),e:new Date(2026,7,22)},
+    {l:'Week 3',s:new Date(2026,7,23),e:new Date(2026,7,29)},
+    {l:'Event Week',s:new Date(2026,7,30),e:new Date(2026,8,5)},
   ]:[
     {l:'Dec 2025',s:new Date(2025,11,1),e:new Date(2025,11,31)},
     {l:'Jan 2026',s:new Date(2026,0,1),e:new Date(2026,0,31)},
