@@ -1319,8 +1319,34 @@ function renderChangeRequests(){
         </div>
         <button class="asset-add-btn" style="background:var(--pink-dim);color:var(--pink);border-color:rgba(245,160,182,.3);" onclick="resubmitAsset('${city}','${item._id}','${fid}')">↑ Resubmit</button>
       </div>
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
+        <span style="font-size:9px;color:var(--w3);text-transform:uppercase;letter-spacing:.08em;font-weight:700;align-self:center;margin-right:2px;">Already handled?</span>
+        <button class="asset-add-btn" style="background:var(--green-dim);color:var(--green);border-color:rgba(94,232,160,.35);" onclick="crMarkApproved('${city}','${item._id}')">✓ Mark approved</button>
+        <button class="asset-add-btn" style="background:rgba(255,255,255,.05);color:rgba(255,255,255,.55);border-color:rgba(255,255,255,.2);" onclick="crMarkPassed('${city}','${item._id}')">✗ Pass — did not post</button>
+      </div>
     </div>`;
   }).join('');
+}
+
+// Change-request shortcut: post was already approved out-of-band (verbal, in group chat, whatever).
+// Clears the change request and moves the post straight to Approved.
+function crMarkApproved(c,itemId){
+  const item=findItemById(c,itemId);
+  if(!item)return;
+  setApproval(c,item,'Kevin','approved');
+  setApproval(c,item,'Emily','approved');
+  saveStatus(c,item,'complete');
+  clearFeedback(c,item);
+  renderAll();
+}
+
+// Change-request shortcut: post won't be redone — mark did-not-post and clear the CR.
+function crMarkPassed(c,itemId){
+  const item=findItemById(c,itemId);
+  if(!item)return;
+  saveStatus(c,item,'did-not-post');
+  clearFeedback(c,item);
+  renderAll();
 }
 
 // Helper functions for approval queue buttons (avoids nested template literals)
