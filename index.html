@@ -1381,13 +1381,57 @@ function fmtCaption(c,item){
   </div>`;
 }
 
+// Fuzzy brand lookup — matches sheet's brand text to library entries with a few strategies:
+//   1. Exact match (case-insensitive)
+//   2. Token-subset: "BMW Orlando" sheet ↔ "BMW" library (either direction)
+//   3. Acronym: "OTF" ↔ "Orange Theory Fitness" (either direction, works even if the sheet
+//      has "OTF Westchase" — the acronym token is spotted inside the multi-word name)
+function _brandTokens(s){return new Set((s||'').toLowerCase().replace(/[^\w\s]/g,' ').split(/\s+/).filter(t=>t.length>=2));}
+function _isTokenSubset(sub,sup){if(!sub.size)return false;for(const t of sub){if(!sup.has(t))return false;}return true;}
+function _brandWordsUpper(s){return (s||'').replace(/[^A-Za-z\s]/g,' ').split(/\s+/).filter(w=>w.length>=1).map(w=>w.toUpperCase());}
+function _acronymOf(s){
+  const words=_brandWordsUpper(s);
+  if(words.length<2)return'';
+  return words.map(w=>w.charAt(0)).join('');
+}
+function _matchesByAcronym(a,b){
+  const wordsA=_brandWordsUpper(a),wordsB=_brandWordsUpper(b);
+  if(!wordsA.length||!wordsB.length)return false;
+  const acrA=_acronymOf(a),acrB=_acronymOf(b);
+  if(acrB.length>=2&&wordsA.includes(acrB))return true;
+  if(acrA.length>=2&&wordsB.includes(acrA))return true;
+  return false;
+}
+function findBrandEntry(sheetBrandName){
+  if(!sheetBrandName)return null;
+  const key=brandTagKey(sheetBrandName);
+  if(brandTagsCache[key])return brandTagsCache[key];
+  const targetTokens=_brandTokens(sheetBrandName);
+  if(!targetTokens.size)return null;
+  let best=null,bestScore=0;
+  for(const entry of Object.values(brandTagsCache)){
+    if(!entry||!entry.name)continue;
+    const libTokens=_brandTokens(entry.name);
+    if(!libTokens.size)continue;
+    let score=0;
+    if(_isTokenSubset(libTokens,targetTokens)||_isTokenSubset(targetTokens,libTokens)){
+      // Token subset preferred — score boosted so it beats an acronym-only match
+      score=100+[...libTokens].filter(t=>targetTokens.has(t)).length;
+    }else if(_matchesByAcronym(sheetBrandName,entry.name)){
+      score=10;
+    }
+    if(score>bestScore){bestScore=score;best=entry;}
+  }
+  return best;
+}
+
 // Brand chip — shown when the sheet's Brand column has a value.
 // Filters handles by the post's market (city) so Orlando posts don't leak Tampa handles.
 // 'all'-market handles show on every card.
 function fmtBrand(item,c){
   if(!item||!item.brand)return'';
   function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
-  const entry=brandTagsCache[brandTagKey(item.brand)];
+  const entry=findBrandEntry(item.brand);
   const cityCtx=c||city;
   if(!entry){
     return `<div class="brand-chip brand-chip-missing">
