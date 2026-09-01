@@ -245,6 +245,10 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--black);color:
 .brand-chip-missing{background:var(--yellow-dim);border-color:rgba(255,255,140,.3);}
 .brand-chip-missing .brand-chip-label{color:var(--yellow);}
 .brand-chip-missing-note{font-size:10px;color:var(--w3);font-style:italic;}
+/* Day-of shot list notes — small hint block on cards when there's a matching concept with notes */
+.shot-notes-chip{background:rgba(245,160,182,.06);border:1px solid rgba(245,160,182,.2);border-left:3px solid var(--pink);border-radius:8px;padding:6px 10px;margin-top:8px;}
+.shot-notes-label{font-size:9px;font-weight:700;color:var(--pink);letter-spacing:.06em;text-transform:uppercase;margin-bottom:3px;}
+.shot-notes-text{font-size:11px;color:var(--w2);line-height:1.45;white-space:pre-wrap;word-break:break-word;}
 .shot-row{display:flex;align-items:center;gap:10px;padding:8px 6px;border-bottom:1px solid var(--border);}
 .shot-name{font-size:12px;color:var(--white);flex:1;font-weight:500;}
 .empty{font-size:12px;color:var(--w3);padding:12px 0;}
@@ -928,7 +932,18 @@ function parseShotListCSV(csv){
     }
     result.push(cur.trim());return result;
   }
-  const lines=csv.split('\n');const items=[];
+  const lines=csv.split('\n');
+  // Detect the "Notes" column by scanning the header row.
+  let notesCol=null;
+  for(let hi=0;hi<Math.min(lines.length,5);hi++){
+    const hdr=parseCSVLine(lines[hi]).map(c=>(c||'').trim().toLowerCase());
+    if(hdr.includes('name')||hdr.includes('name ')||hdr.includes('concept')){
+      const idx=hdr.indexOf('notes');
+      if(idx>=0)notesCol=idx;
+      break;
+    }
+  }
+  const items=[];
   for(const line of lines){
     if(!line.trim())continue;
     const row=parseCSVLine(line);
@@ -939,26 +954,37 @@ function parseShotListCSV(csv){
       const matches=cell.match(/https?:\/\/(?:www\.)?(?:instagram\.com|tiktok\.com)[^\s,"]*/g);
       if(matches)links.push(...matches);
     }
-    if(links.length>0)items.push({concept:concept.toLowerCase(),links});
+    const notes=notesCol!=null?(row[notesCol]||'').trim():'';
+    // Keep the row if it carries either an inspo link OR a notes hint.
+    if(links.length>0||notes)items.push({concept:concept.toLowerCase(),links,notes});
   }
   return items;
 }
 
-function getInspoLinks(content){
-  // Pick the shot list matching the current tab (Tampa list on Tampa, Orlando otherwise).
+// Fuzzy-match a calendar item's content to the best-scoring shot list entry.
+function _matchShotListEntry(content){
   const list=city==='tampa'?SHOT_LIST_TPA:SHOT_LIST_ORL;
-  if(!content||!list.length)return[];
+  if(!content||!list.length)return null;
   const stopWords=new Set(['the','a','an','and','or','to','in','of','for','with','on','at','is','it','this','that','we','i','my','our','you','your','its','are','was','be','have','has','do','did','not','but','so','if','as','by','up','out','can','will','just','now','all','when','what','how','who','get','got','need','want','like','see','know','think','go','come','make','take','give','show','tell','let','put','use','say','new','more','some','any','from','they','them','their','there','then','than','would','could','should']);
   const calWords=content.toLowerCase().split(/\s+/).filter(w=>w.length>2&&!stopWords.has(w));
-  if(!calWords.length)return[];
-  let bestMatch=null;let bestScore=0;
-  list.forEach(({concept,links})=>{
-    const shotWords=concept.split(/\s+/).filter(w=>w.length>2&&!stopWords.has(w));
+  if(!calWords.length)return null;
+  let best=null,bestScore=0;
+  list.forEach(entry=>{
+    const shotWords=entry.concept.split(/\s+/).filter(w=>w.length>2&&!stopWords.has(w));
     let score=0;
     calWords.forEach(cw=>{shotWords.forEach(sw=>{if(sw===cw)score+=2;else if(sw.includes(cw)||cw.includes(sw))score+=1;});});
-    if(score>bestScore){bestScore=score;bestMatch=links;}
+    if(score>bestScore){bestScore=score;best=entry;}
   });
-  return bestScore>=1?bestMatch:[];
+  return bestScore>=1?best:null;
+}
+
+function getInspoLinks(content){
+  const entry=_matchShotListEntry(content);
+  return entry?(entry.links||[]):[];
+}
+function getShotListNotes(content){
+  const entry=_matchShotListEntry(content);
+  return entry?(entry.notes||''):'';
 }
 
 // Parse a row from the calendar sheet into our item format
@@ -1457,6 +1483,19 @@ function fmtBrand(item,c){
   </div>`;
 }
 
+// Shot list notes chip — pulls Notes column text from the matched day-of shot list row.
+// Uses the same fuzzy concept match as inspo links (via _matchShotListEntry).
+function fmtShotNotes(item){
+  if(!item||!item.content)return'';
+  const notes=getShotListNotes(item.content);
+  if(!notes)return'';
+  function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  return `<div class="shot-notes-chip">
+    <div class="shot-notes-label">📝 Important Notes</div>
+    <div class="shot-notes-text">${esc(notes)}</div>
+  </div>`;
+}
+
 function setAT(fid,type){
   assetTypeState[fid]=type;
   const v=document.getElementById(fid+'tv');const i=document.getElementById(fid+'ti');
@@ -1602,6 +1641,7 @@ function renderApprovalQueue(){
       <div class="aq-item-meta">${dayLabel(item)} · Posts ${dateLabel(item)} · ${item.who||'—'}</div>
       ${all.length?`<div class="aq-assets">${all.map(a=>{const cls=a.type==='video'?'asset-chip asset-video':a.type==='photo'?'asset-chip asset-photo':'inspo-link';const icon=a.type==='video'?'▶ ':a.type==='photo'?'▶ ':'';return`<a class="${cls}" href="${a.url}" target="_blank" style="font-size:10px;">${icon}${a.label}</a>`;}).join('')}</div>`:''}
       ${fmtBrand(item,c)}
+      ${fmtShotNotes(item)}
       ${fmtCaption(c,item)}
       ${feedbackHtml}
       <div class="aq-approvers">${otherLines}</div>
@@ -1646,6 +1686,7 @@ function renderChangeRequests(){
       </div>
       ${historyHtml}
       ${fmtBrand(item)}
+      ${fmtShotNotes(item)}
       ${fmtCaption(city,item)}
       <div class="asset-add-row" style="margin-top:10px;">
         <input class="asset-input" id="${fid}u" placeholder="Paste updated Drive or Dropbox link..." autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-form-type="other" />
@@ -1907,6 +1948,7 @@ function openPanel(type){
           return `<span class="${cls}"><a href="${a.url}" target="_blank" style="color:inherit;text-decoration:none;">▶ ${a.label||'Asset '+(i+1)}</a>${delBtn}</span>`;
         }).join('')}</div>`:''}
         ${fmtBrand(item)}
+        ${fmtShotNotes(item)}
         ${fmtCaption(city,item)}
       </div>`;
     }).join('');
@@ -1943,6 +1985,7 @@ function renderCard(item,type){
     ${dl?`<div class="card-deadline ${dl.cls}">${dl.label} · posts ${dateLabel(item)}</div>`:''}
     ${fmtAssets(item,true)}
     ${fmtBrand(item)}
+    ${fmtShotNotes(item)}
     ${fmtCaption(city,item)}
     ${showChips?fmtApproverChips(item,false):''}
     <div class="apv-row">${renderApvBtns(city,item,false)}</div>
@@ -2001,13 +2044,14 @@ function renderCal(){
     const assetHtml=!tbd?fmtAssets(r,false):'';
     const capHtml=!tbd?fmtCaption(city,r):'';
     const brandHtml=!tbd?fmtBrand(r):'';
+    const notesHtml=!tbd?fmtShotNotes(r):'';
     return `<div class="cal-row${isToday?' today-row':''}">
       <div style="display:flex;align-items:flex-start;gap:3px;padding-top:3px;"><div class="dot ${dotCls}"></div><div class="cal-date">${dateLabel(r)}</div></div>
       <div class="cal-day cal-day-col">${dayLabel(r)}</div>
       <div>
         <div class="cal-content">${contentLabel}</div>
         <div class="cal-who">${r.who||''}</div>
-        ${stBadge}${showChips?fmtApproverChips(r,true):''}${apvBtns}${assetHtml}${brandHtml}${capHtml}
+        ${stBadge}${showChips?fmtApproverChips(r,true):''}${apvBtns}${assetHtml}${brandHtml}${notesHtml}${capHtml}
       </div>
       <div>${dlStr}</div>
     </div>`;
