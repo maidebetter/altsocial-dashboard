@@ -904,7 +904,7 @@ let SHOT_LIST_INSPO=[];
 
 async function fetchShotList(){
   const ORL_SHOT_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=1605270587&single=true&output=csv';
-  const TPA_SHOT_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=1924270414&single=true&output=csv';
+  const TPA_SHOT_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=1344846778&single=true&output=csv';
   async function fetchOne(url,label){
     try{
       const resp=await fetch(url);
@@ -962,28 +962,37 @@ function parseShotListCSV(csv){
 }
 
 // Fuzzy-match a calendar item's content to the best-scoring shot list entry.
-function _matchShotListEntry(content){
-  const list=city==='tampa'?SHOT_LIST_TPA:SHOT_LIST_ORL;
+// Requires at least one whole-word exact match (score >= 2) to avoid spurious substring
+// hits like "were" ⊂ "powered". The `c` param scopes to the post's actual city, so an
+// Orlando post surfaced in the cross-city approval queue while Tampa tab is active
+// still reads the Orlando shot list.
+function _matchShotListEntry(content,c){
+  const cityCtx=c||city;
+  const list=cityCtx==='tampa'?SHOT_LIST_TPA:SHOT_LIST_ORL;
   if(!content||!list.length)return null;
   const stopWords=new Set(['the','a','an','and','or','to','in','of','for','with','on','at','is','it','this','that','we','i','my','our','you','your','its','are','was','be','have','has','do','did','not','but','so','if','as','by','up','out','can','will','just','now','all','when','what','how','who','get','got','need','want','like','see','know','think','go','come','make','take','give','show','tell','let','put','use','say','new','more','some','any','from','they','them','their','there','then','than','would','could','should']);
   const calWords=content.toLowerCase().split(/\s+/).filter(w=>w.length>2&&!stopWords.has(w));
   if(!calWords.length)return null;
-  let best=null,bestScore=0;
+  let best=null,bestScore=0,bestExact=0;
   list.forEach(entry=>{
     const shotWords=entry.concept.split(/\s+/).filter(w=>w.length>2&&!stopWords.has(w));
-    let score=0;
-    calWords.forEach(cw=>{shotWords.forEach(sw=>{if(sw===cw)score+=2;else if(sw.includes(cw)||cw.includes(sw))score+=1;});});
-    if(score>bestScore){bestScore=score;best=entry;}
+    let score=0,exact=0;
+    calWords.forEach(cw=>{shotWords.forEach(sw=>{
+      if(sw===cw){score+=2;exact++;}
+      else if(sw.includes(cw)||cw.includes(sw))score+=1;
+    });});
+    if(score>bestScore){bestScore=score;bestExact=exact;best=entry;}
   });
-  return bestScore>=1?best:null;
+  // Require at least one whole-word overlap. Pure-substring matches (score=1) are too noisy.
+  return bestExact>=1?best:null;
 }
 
-function getInspoLinks(content){
-  const entry=_matchShotListEntry(content);
+function getInspoLinks(content,c){
+  const entry=_matchShotListEntry(content,c);
   return entry?(entry.links||[]):[];
 }
-function getShotListNotes(content){
-  const entry=_matchShotListEntry(content);
+function getShotListNotes(content,c){
+  const entry=_matchShotListEntry(content,c);
   return entry?(entry.notes||''):'';
 }
 
@@ -1007,9 +1016,13 @@ async function fetchSheetData(){
     document.getElementById('save-pill').textContent='Loading...';
     document.getElementById('save-pill').style.opacity='1';
 
-    const ORL_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=1617867229&single=true&output=csv';
-    // Tampa — new cycle tab (8/10 – 9/5)
-    const TPA_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=2124149385&single=true&output=csv';
+    const ORL_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=1026209355&single=true&output=csv';
+    // Tampa — fetch multiple cycles so remaining posts from the previous cycle stay visible
+    // until they're fully wrapped. Drop the older gid when the old cycle is done.
+    const TPA_URLS=[
+      'https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=2124149385&single=true&output=csv', // 9/5 Tampa Calendar
+      'https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=1617867229&single=true&output=csv', // 10/3 Tampa Calendar
+    ];
     // TikTok — Lindy's tab in the Orlando workbook
     const TT_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=2092437778&single=true&output=csv';
 
@@ -1026,19 +1039,30 @@ async function fetchSheetData(){
       loadFallbackData();
     }
 
-    // Fetch Tampa if URL is available
-    if(TPA_URL){
+    // Fetch every Tampa cycle URL in parallel and merge results. Dedupe by (date, content)
+    // so if a post accidentally lives in both cycles the newer copy wins.
+    if(TPA_URLS&&TPA_URLS.length){
       try{
-        const tpaResp=await fetch(TPA_URL);
-        if(tpaResp.ok){
-          const tpaCsv=await tpaResp.text();
-          const tpaParsed=parseCalendarCSV(tpaCsv);
-          if(tpaParsed.length>3){
-            TAMPA=tpaParsed;
-            console.log(`✓ Tampa: ${TAMPA.length} items from live sheet`);
-          }
+        const results=await Promise.all(TPA_URLS.map(async(url,i)=>{
+          try{
+            const r=await fetch(url);
+            if(!r.ok)return[];
+            return parseCalendarCSV(await r.text());
+          }catch(e){console.log('Tampa fetch error (url '+i+'):',e.message);return[];}
+        }));
+        const merged=[];
+        const seen=new Set();
+        results.flat().forEach(item=>{
+          const k=item.date+'||'+item.content;
+          if(seen.has(k))return;
+          seen.add(k);
+          merged.push(item);
+        });
+        if(merged.length>3){
+          TAMPA=merged;
+          console.log(`✓ Tampa: ${TAMPA.length} items merged from ${TPA_URLS.length} cycle URL(s)`);
         }
-      }catch(e){console.log('Tampa fetch error:',e.message);}
+      }catch(e){console.log('Tampa merge error:',e.message);}
     }
 
     // Fetch TikTok (Lindy's tab) — different column layout
@@ -1485,9 +1509,11 @@ function fmtBrand(item,c){
 
 // Shot list notes chip — pulls Notes column text from the matched day-of shot list row.
 // Uses the same fuzzy concept match as inspo links (via _matchShotListEntry).
-function fmtShotNotes(item){
+// The `c` param is the post's actual city — critical for the cross-city approval queue
+// so an Orlando post viewed while on the Tampa tab reads the Orlando shot list.
+function fmtShotNotes(item,c){
   if(!item||!item.content)return'';
-  const notes=getShotListNotes(item.content);
+  const notes=getShotListNotes(item.content,c);
   if(!notes)return'';
   function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
   return `<div class="shot-notes-chip">
@@ -1641,7 +1667,7 @@ function renderApprovalQueue(){
       <div class="aq-item-meta">${dayLabel(item)} · Posts ${dateLabel(item)} · ${item.who||'—'}</div>
       ${all.length?`<div class="aq-assets">${all.map(a=>{const cls=a.type==='video'?'asset-chip asset-video':a.type==='photo'?'asset-chip asset-photo':'inspo-link';const icon=a.type==='video'?'▶ ':a.type==='photo'?'▶ ':'';return`<a class="${cls}" href="${a.url}" target="_blank" style="font-size:10px;">${icon}${a.label}</a>`;}).join('')}</div>`:''}
       ${fmtBrand(item,c)}
-      ${fmtShotNotes(item)}
+      ${fmtShotNotes(item,c)}
       ${fmtCaption(c,item)}
       ${feedbackHtml}
       <div class="aq-approvers">${otherLines}</div>
@@ -2010,10 +2036,16 @@ function renderCal(){
     {l:'Week 3',s:new Date(2026,7,30),e:new Date(2026,8,5)},
     {l:'Event Week',s:new Date(2026,8,6),e:new Date(2026,8,12)},
   ]:city==='tampa'?[
-    {l:'Week 1',s:new Date(2026,7,10),e:new Date(2026,7,15)},
-    {l:'Week 2',s:new Date(2026,7,16),e:new Date(2026,7,22)},
-    {l:'Week 3',s:new Date(2026,7,23),e:new Date(2026,7,29)},
-    {l:'Event Week',s:new Date(2026,7,30),e:new Date(2026,8,5)},
+    // 9/5 cycle — kept for overlap, past dates auto-hide
+    {l:'9/5 Cycle · Week 1',s:new Date(2026,7,10),e:new Date(2026,7,15)},
+    {l:'9/5 Cycle · Week 2',s:new Date(2026,7,16),e:new Date(2026,7,22)},
+    {l:'9/5 Cycle · Week 3',s:new Date(2026,7,23),e:new Date(2026,7,29)},
+    {l:'9/5 Cycle · Event Week',s:new Date(2026,7,30),e:new Date(2026,8,5)},
+    // 10/3 cycle — new cycle building toward the 10/3 Tampa event
+    {l:'10/3 Cycle · Week 1',s:new Date(2026,8,6),e:new Date(2026,8,12)},
+    {l:'10/3 Cycle · Week 2',s:new Date(2026,8,13),e:new Date(2026,8,19)},
+    {l:'10/3 Cycle · Week 3',s:new Date(2026,8,20),e:new Date(2026,8,26)},
+    {l:'10/3 Cycle · Event Week',s:new Date(2026,8,27),e:new Date(2026,9,3)},
   ]:[
     {l:'Dec 2025',s:new Date(2025,11,1),e:new Date(2025,11,31)},
     {l:'Jan 2026',s:new Date(2026,0,1),e:new Date(2026,0,31)},
