@@ -47,6 +47,7 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--black);color:
 .p-amanda.on{background:#FB923C;}
 .p-ani.on{background:#2DD4BF;}
 .p-jaylean.on{background:#FBBF24;}
+.p-charlie.on{background:#F87171;}
 .approval-queue{background:var(--blue-dim2);border:1px solid rgba(56,182,255,.2);border-radius:var(--rl);padding:1rem 1.1rem;margin-bottom:1.25rem;display:none;}
 .approval-queue.show{display:block;}
 /* Change request modal */
@@ -880,8 +881,8 @@ function submitCR(){
 
 
 
-const PEOPLE=['All','Cory','Lindy','Breno','Emily','Kevin','Amanda','Ani','Jaylean'];
-const PERSON_CLS={'All':'p-all','Cory':'p-cory','Lindy':'p-lindy','Breno':'p-breno','Emily':'p-emily','Kevin':'p-kevin','Amanda':'p-amanda','Ani':'p-ani','Jaylean':'p-jaylean'};
+const PEOPLE=['All','Cory','Breno','Emily','Kevin','Ani','Jaylean','Charlie'];
+const PERSON_CLS={'All':'p-all','Cory':'p-cory','Breno':'p-breno','Emily':'p-emily','Kevin':'p-kevin','Ani':'p-ani','Jaylean':'p-jaylean','Charlie':'p-charlie'};
 // Names other than 'All' that map a row's "Who" column to a filterable owner.
 // If a row's Who doesn't match any of these, the row falls under Cory's tab by default.
 const KNOWN_OWNERS=PEOPLE.filter(p=>p!=='All');
@@ -904,7 +905,7 @@ let SHOT_LIST_INSPO=[];
 
 async function fetchShotList(){
   const ORL_SHOT_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=1463260511&single=true&output=csv';
-  const TPA_SHOT_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=1344846778&single=true&output=csv';
+  const TPA_SHOT_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=1357332484&single=true&output=csv';
   async function fetchOne(url,label){
     try{
       const resp=await fetch(url);
@@ -1017,11 +1018,10 @@ async function fetchSheetData(){
     document.getElementById('save-pill').style.opacity='1';
 
     const ORL_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=1835066437&single=true&output=csv';
-    // Tampa — fetch multiple cycles so remaining posts from the previous cycle stay visible
-    // until they're fully wrapped. Drop the older gid when the old cycle is done.
+    // Tampa — array pattern kept for easy overlap in future transitions. Add older gids here
+    // when a cycle rolls over and you want remaining posts visible for a while.
     const TPA_URLS=[
-      'https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=2124149385&single=true&output=csv', // 9/5 Tampa Calendar
-      'https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=1617867229&single=true&output=csv', // 10/3 Tampa Calendar
+      'https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=1033456546&single=true&output=csv', // 10/24 Tampa Calendar
     ];
     // TikTok — Lindy's tab in the Orlando workbook
     const TT_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=2092437778&single=true&output=csv';
@@ -2036,16 +2036,9 @@ function renderCal(){
     {l:'Week 3',s:new Date(2026,8,27),e:new Date(2026,9,3)},
     {l:'Event Week',s:new Date(2026,9,4),e:new Date(2026,9,10)},
   ]:city==='tampa'?[
-    // 9/5 cycle — kept for overlap, past dates auto-hide
-    {l:'9/5 Cycle · Week 1',s:new Date(2026,7,10),e:new Date(2026,7,15)},
-    {l:'9/5 Cycle · Week 2',s:new Date(2026,7,16),e:new Date(2026,7,22)},
-    {l:'9/5 Cycle · Week 3',s:new Date(2026,7,23),e:new Date(2026,7,29)},
-    {l:'9/5 Cycle · Event Week',s:new Date(2026,7,30),e:new Date(2026,8,5)},
-    // 10/3 cycle — new cycle building toward the 10/3 Tampa event
-    {l:'10/3 Cycle · Week 1',s:new Date(2026,8,6),e:new Date(2026,8,12)},
-    {l:'10/3 Cycle · Week 2',s:new Date(2026,8,13),e:new Date(2026,8,19)},
-    {l:'10/3 Cycle · Week 3',s:new Date(2026,8,20),e:new Date(2026,8,26)},
-    {l:'10/3 Cycle · Event Week',s:new Date(2026,8,27),e:new Date(2026,9,3)},
+    {l:'Week 1',s:new Date(2026,9,4),e:new Date(2026,9,10)},
+    {l:'Week 2',s:new Date(2026,9,11),e:new Date(2026,9,17)},
+    {l:'Event Week',s:new Date(2026,9,18),e:new Date(2026,9,24)},
   ]:[
     {l:'Dec 2025',s:new Date(2025,11,1),e:new Date(2025,11,31)},
     {l:'Jan 2026',s:new Date(2026,0,1),e:new Date(2026,0,31)},
