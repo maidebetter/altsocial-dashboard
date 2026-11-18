@@ -1017,7 +1017,7 @@ async function fetchSheetData(){
     document.getElementById('save-pill').textContent='Loading...';
     document.getElementById('save-pill').style.opacity='1';
 
-    const ORL_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=1366776574&single=true&output=csv';
+    const ORL_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vRjMOu9EcXPOjABUkr0k_eCPf43miaF6qMqe6M8mBq3HMADBtH8VzyfkLIpRvGCtijDv2qswLVXYD3M/pub?gid=769897473&single=true&output=csv';
     // Tampa — array pattern kept for easy overlap in future transitions. Add older gids here
     // when a cycle rolls over and you want remaining posts visible for a while.
     const TPA_URLS=[
@@ -2031,11 +2031,10 @@ function renderCal(){
     return true;
   });
   const weeks=city==='orlando'?[
-    {l:'Week 1',s:new Date(2026,9,11),e:new Date(2026,9,17)},
-    {l:'Week 2',s:new Date(2026,9,18),e:new Date(2026,9,24)},
-    {l:'Week 3',s:new Date(2026,9,25),e:new Date(2026,9,31)},
-    {l:'Week 4',s:new Date(2026,10,1),e:new Date(2026,10,7)},
-    {l:'Event Week',s:new Date(2026,10,8),e:new Date(2026,10,14)},
+    {l:'Week 1',s:new Date(2026,10,15),e:new Date(2026,10,21)},
+    {l:'Week 2',s:new Date(2026,10,22),e:new Date(2026,10,28)},
+    {l:'Week 3',s:new Date(2026,10,29),e:new Date(2026,11,5)},
+    {l:'Event Week',s:new Date(2026,11,6),e:new Date(2026,11,12)},
   ]:city==='tampa'?[
     {l:'Week 1',s:new Date(2026,9,25),e:new Date(2026,9,31)},
     {l:'Week 2',s:new Date(2026,10,1),e:new Date(2026,10,7)},
